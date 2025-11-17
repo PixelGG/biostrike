@@ -240,6 +240,7 @@ export function createFloranInstance(speciesId: string): Floran {
     overWaterStacks: 0,
     rootRot: false,
     statuses: [],
+    activeItemEffects: {},
   };
 }
 

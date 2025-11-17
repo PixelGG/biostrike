@@ -52,8 +52,11 @@ wss.on('connection', (socket) => {
     }
 
     if (msg.type === 'start_match') {
-      const player = createFloranInstance('sunflower');
-      const enemy = createFloranInstance('cactus');
+      const playerSpeciesId = msg.payload?.playerSpeciesId ?? 'sunflower';
+      const enemySpeciesId = msg.payload?.enemySpeciesId ?? 'cactus';
+
+      const player = createFloranInstance(playerSpeciesId);
+      const enemy = createFloranInstance(enemySpeciesId);
 
       context.match = new Match(player, enemy);
 
@@ -76,7 +79,8 @@ wss.on('connection', (socket) => {
       const { command } = msg.payload;
       const normalizedCommand: Command = {
         type: command.type ?? CommandType.Attack,
-        targetIndex: 1,
+        targetIndex: command.targetIndex ?? 1,
+        itemId: command.itemId,
       };
 
       const enemyCommand: Command = {

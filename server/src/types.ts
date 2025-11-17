@@ -99,6 +99,17 @@ export interface StatusEffect {
   stacks: number;
 }
 
+export interface ActiveItemEffects {
+  /**
+   * Reduces transpiration by a percentage for a limited number of rounds.
+   * value: fraction (0.3 = 30 % Reduktion)
+   */
+  transpReduce?: {
+    value: number;
+    remainingRounds: number;
+  };
+}
+
 export interface Floran {
   id: string;
   name: string;
@@ -106,6 +117,7 @@ export interface Floran {
   overWaterStacks: number;
   rootRot: boolean;
   statuses: StatusEffect[];
+  activeItemEffects?: ActiveItemEffects;
 }
 
 export interface FloranBaseStats {
@@ -164,11 +176,21 @@ export interface MatchView {
 export interface Command {
   type: CommandType;
   targetIndex?: number;
+  /**
+   * Optional: item identifier when using CommandType.Item.
+   */
+  itemId?: string;
 }
 
 // WebSocket messages used between client and server for the vertical slice.
 export type ClientMessage =
-  | { type: 'start_match' }
+  | {
+      type: 'start_match';
+      payload?: {
+        playerSpeciesId?: string;
+        enemySpeciesId?: string;
+      };
+    }
   | { type: 'command'; payload: { command: Command } };
 
 export type ServerMessage =

@@ -100,6 +100,28 @@
           <button id="btn-connect">Verbinden</button>
           <button id="btn-start" disabled>Match starten</button>
           <button id="btn-attack" disabled>Angriff (ATTACK)</button>
+          <button id="btn-item" disabled>Item benutzen</button>
+        </div>
+        <div style="margin:0.5rem 0;">
+          <label>
+            Dein Floran:
+            <select id="select-species">
+              <option value="sunflower">Sonnenblume</option>
+              <option value="cactus">Kaktus</option>
+              <option value="aloe">Aloe</option>
+              <option value="water_lily">Seerose</option>
+              <option value="bamboo">Bambus</option>
+              <option value="sundew">Sonnentau</option>
+            </select>
+          </label>
+          <label style="margin-left:0.75rem;">
+            Item:
+            <select id="select-item">
+              <option value="">(kein Item)</option>
+              <option value="watering_can">Gießkanne (+Wasser)</option>
+              <option value="mulch">Mulch (-Transpiration)</option>
+            </select>
+          </label>
         </div>
         <div id="status"></div>
         <div id="battle"></div>

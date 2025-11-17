@@ -64,9 +64,15 @@ type ServerMessage =
   | { type: 'match_state'; payload: MatchView }
   | { type: 'error'; payload: { message: string } };
 
+type ClientCommand = {
+  type: 'ATTACK' | 'ITEM';
+  targetIndex?: number;
+  itemId?: string;
+};
+
 type ClientMessage =
-  | { type: 'start_match' }
-  | { type: 'command'; payload: { command: { type: 'ATTACK'; targetIndex?: number } } };
+  | { type: 'start_match'; payload?: { playerSpeciesId?: string; enemySpeciesId?: string } }
+  | { type: 'command'; payload: { command: ClientCommand } };
 
 let socket: WebSocket | null = null;
 let lastMatchState: MatchView | null = null;
@@ -85,6 +91,9 @@ const logEl = qs<HTMLDivElement>('#log');
 const btnConnect = qs<HTMLButtonElement>('#btn-connect');
 const btnStart = qs<HTMLButtonElement>('#btn-start');
 const btnAttack = qs<HTMLButtonElement>('#btn-attack');
+const btnItem = qs<HTMLButtonElement>('#btn-item');
+const selectSpecies = qs<HTMLSelectElement>('#select-species');
+const selectItem = qs<HTMLSelectElement>('#select-item');
 
 function setStatus(message: string): void {
   statusEl.textContent = message;
@@ -173,6 +182,7 @@ function handleServerMessage(message: ServerMessage): void {
 
     const canAct = !message.payload.isFinished;
     btnAttack.disabled = !canAct;
+    btnItem.disabled = !canAct || !selectItem.value;
     btnStart.disabled = false;
   }
 }
@@ -204,6 +214,7 @@ function connect(): void {
     setStatus('Verbindung geschlossen.');
     btnStart.disabled = true;
     btnAttack.disabled = true;
+    btnItem.disabled = true;
   });
 
   socket.addEventListener('error', () => {
@@ -225,8 +236,14 @@ btnConnect.addEventListener('click', () => {
 });
 
 btnStart.addEventListener('click', () => {
-  sendClientMessage({ type: 'start_match' });
+  const playerSpeciesId = selectSpecies.value || 'sunflower';
+  const msg: ClientMessage = {
+    type: 'start_match',
+    payload: { playerSpeciesId },
+  };
+  sendClientMessage(msg);
   btnAttack.disabled = false;
+  btnItem.disabled = !selectItem.value;
 });
 
 btnAttack.addEventListener('click', () => {
@@ -237,5 +254,31 @@ btnAttack.addEventListener('click', () => {
   sendClientMessage(msg);
 });
 
+btnItem.addEventListener('click', () => {
+  const itemId = selectItem.value;
+  if (!itemId) {
+    setStatus('Bitte zuerst ein Item auswählen.');
+    return;
+  }
+
+  const msg: ClientMessage = {
+    type: 'command',
+    payload: {
+      command: {
+        type: 'ITEM',
+        targetIndex: 0,
+        itemId,
+      },
+    },
+  };
+  sendClientMessage(msg);
+});
+
+selectItem.addEventListener('change', () => {
+  const canAct = !!lastMatchState && !lastMatchState.isFinished;
+  btnItem.disabled = !canAct || !selectItem.value;
+});
+
 // Auto-connect in dev environments to reduce clicks.
 connect();
+

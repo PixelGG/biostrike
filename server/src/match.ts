@@ -10,6 +10,7 @@ import {
   StatusType,
   WeatherType,
 } from './types';
+import { Item, items } from './data/items';
 
 type RNG = () => number;
 
@@ -25,6 +26,11 @@ function mulberry32(seed: number): RNG {
 }
 
 const MIN_OVERFLOW_THRESHOLD = 1; // minimal overflow to count as overwatering
+
+function getItemById(id: string | undefined): Item | undefined {
+  if (!id) return undefined;
+  return items.find((it) => it.id === id);
+}
 
 export class Match {
   private phase: MatchPhase;
@@ -101,11 +107,22 @@ export class Match {
       const resistanceReduction =
         (floran.stats.resistances.heat + floran.stats.resistances.dry) * 4;
 
-      const transpirationRaw =
+      let transpirationRaw =
         baseTranspiration +
         heatModifier +
         windModifier -
         resistanceReduction;
+
+      let transpReduceValue = 0;
+      if (floran.activeItemEffects?.transpReduce) {
+        const effect = floran.activeItemEffects.transpReduce;
+        transpReduceValue = effect.value;
+        transpirationRaw *= 1 - effect.value;
+        effect.remainingRounds -= 1;
+        if (effect.remainingRounds <= 0) {
+          delete floran.activeItemEffects.transpReduce;
+        }
+      }
 
       const transpiration = Math.max(0, Math.round(transpirationRaw));
       const beforeWater = floran.stats.currentWater;
@@ -117,6 +134,7 @@ export class Match {
         heatModifier,
         windModifier,
         resistanceReduction,
+        transpReduceValue,
         transpiration,
         beforeWater,
         afterWater: floran.stats.currentWater,
@@ -242,6 +260,8 @@ export class Match {
 
       if (cmd.type === CommandType.Attack) {
         this.resolveBasicAttack(floran, target);
+      } else if (cmd.type === CommandType.Item) {
+        this.resolveItemUse(floran, cmd);
       }
 
       // Other command types (Skill, Item, Switch) can be implemented later.
@@ -311,6 +331,82 @@ export class Match {
       finalDamage,
       beforeHp,
       afterHp: defender.stats.hp,
+    });
+  }
+
+  private resolveItemUse(user: Floran, command: Command): void {
+    const item = getItemById(command.itemId);
+    if (!item) {
+      this.log('Item-Invalid', { user: user.name, reason: 'Unknown item' });
+      return;
+    }
+
+    switch (item.effectKey) {
+      case 'water_instant':
+        this.applyWaterInstant(user, item);
+        break;
+      case 'transp_reduce':
+        this.applyTranspReduce(user, item);
+        break;
+      default:
+        this.log('Item-Unsupported', {
+          user: user.name,
+          itemId: item.id,
+          effectKey: item.effectKey,
+        });
+        break;
+    }
+  }
+
+  private applyWaterInstant(target: Floran, item: Item): void {
+    const value = (item.params.value as number) ?? 0;
+    const overflowStack = (item.params.overflowStack as number) ?? 0;
+
+    const beforeWater = target.stats.currentWater;
+    const capacity = target.stats.capacity;
+
+    let overflow = 0;
+
+    if (beforeWater + value > capacity) {
+      overflow = beforeWater + value - capacity;
+      target.stats.currentWater = capacity;
+    } else {
+      target.stats.currentWater = beforeWater + value;
+    }
+
+    if (overflow > 0 && overflowStack > 0) {
+      target.overWaterStacks += overflowStack;
+    }
+
+    this.log('Item-WaterInstant', {
+      floran: target.name,
+      itemId: item.id,
+      gain: value,
+      beforeWater,
+      afterWater: target.stats.currentWater,
+      overflow,
+      overWaterStacks: target.overWaterStacks,
+    });
+  }
+
+  private applyTranspReduce(target: Floran, item: Item): void {
+    const value = (item.params.value as number) ?? 0;
+    const duration = (item.params.duration as number) ?? 0;
+
+    if (!target.activeItemEffects) {
+      target.activeItemEffects = {};
+    }
+
+    target.activeItemEffects.transpReduce = {
+      value,
+      remainingRounds: Math.max(1, Math.round(duration)),
+    };
+
+    this.log('Item-TranspReduce', {
+      floran: target.name,
+      itemId: item.id,
+      value,
+      duration,
     });
   }
 
