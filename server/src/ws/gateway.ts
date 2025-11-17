@@ -25,6 +25,7 @@ import {
   setMatchFoundHandler,
   startMatchmakingLoop,
 } from '../matchmaking/service';
+import { processMatchResult } from '../rewards/service';
 
 type ConnectionState = 'AUTHENTICATING' | 'READY' | 'THROTTLED' | 'CLOSING' | 'CLOSED';
 
@@ -375,6 +376,22 @@ function handleMatchCommand(
   }));
 
   if (newState.isFinished) {
+    const durationSeconds = (Date.now() - record.createdAt) / 1000;
+
+    const result = {
+      matchId,
+      mode: record.mode,
+      arenaId: newState.arenaId,
+      durationSeconds,
+      state: newState,
+      players: record.players.map((userId, idx) => ({
+        userId,
+        isWinner: newState.winnerIndex === idx,
+      })),
+    };
+
+    processMatchResult(result);
+
     broadcastToMatch(matchId, (state) => ({
       type: 'match/result',
       payload: { matchId, state },

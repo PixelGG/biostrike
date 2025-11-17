@@ -278,6 +278,53 @@ export interface MatchTicket {
   createdAt: number;
 }
 
+// Progression and rewards domain types.
+
+export interface PlayerProgressionProfile {
+  userId: string;
+  playerLevel: number;
+  currentXp: number;
+  xpToNextLevel: number;
+  perkPoints: number;
+  perksTaken: string[];
+  lastLevelUpTimestamp?: number;
+}
+
+export interface CurrencyWallet {
+  userId: string;
+  biocredits: number;
+}
+
+export interface CurrencyTransaction {
+  userId: string;
+  delta: number;
+  reason: string;
+  at: number;
+}
+
+export interface FloranInstance {
+  instanceId: string;
+  speciesId: string;
+  ownerId: string;
+  level: number;
+  xp: number;
+  evolutionStage?: string;
+}
+
+export interface MatchResultPlayerSummary {
+  userId: string;
+  isWinner: boolean;
+}
+
+export interface MatchResult {
+  matchId: string;
+  mode: MatchMode;
+  arenaId?: string;
+  durationSeconds: number;
+  state: MatchView;
+  players: MatchResultPlayerSummary[];
+}
+
 export interface EnvelopeMeta {
   id: string;
   /**
