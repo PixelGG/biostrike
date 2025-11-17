@@ -11,15 +11,21 @@ import {
   CommandType,
   ServerMessage,
 } from './types';
+import { config } from './config/env';
+import { logger } from './core/logger';
+import { createApiRouter } from './http/api';
+import { connectDatabase } from './db';
 
 const app = express();
 
 app.use(express.json());
 
 // Simple health check endpoint
-app.get('/api/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+app.use('/api', createApiRouter());
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
@@ -39,7 +45,7 @@ wss.on('connection', (socket) => {
   const context: ConnectionContext = {};
   contexts.set(socket, context);
 
-  console.log('Client connected');
+  logger.info('Client connected');
 
   sendMessage(socket, {
     type: 'welcome',
@@ -112,12 +118,18 @@ wss.on('connection', (socket) => {
   });
 
   socket.on('close', () => {
-    console.log('Client disconnected');
+    logger.info('Client disconnected');
     contexts.delete(socket);
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`BioStrike server listening on port ${PORT}`);
-});
+async function start() {
+  await connectDatabase();
+
+  server.listen(config.port, () => {
+    logger.info(`BioStrike server listening`, { port: config.port, env: config.env });
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
+start();
