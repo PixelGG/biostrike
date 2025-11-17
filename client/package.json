@@ -1,0 +1,13 @@
+{
+  "name": "biostrike-client",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "ts-node src/main.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.1"
+  },
+  "dependencies": {}
+}
