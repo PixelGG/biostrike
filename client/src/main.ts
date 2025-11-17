@@ -68,8 +68,6 @@ type ServerEnvelopeMeta = {
   ts?: string;
 };
 
-type ChatModerationState = 'VISIBLE' | 'SOFT_HIDDEN' | 'HARD_HIDDEN' | 'PENDING_REVIEW';
-
 type ServerMessagePayload =
   | { type: 'auth/ok'; payload: { userId: string; sessionId: string } }
   | { type: 'auth/error'; payload: { code: string; message: string } }
@@ -77,28 +75,6 @@ type ServerMessagePayload =
   | { type: 'match/found'; payload: { matchId: string; mode: MatchMode; opponent?: { userId: string } } }
   | { type: 'match/state'; payload: { matchId: string; state: MatchView } }
   | { type: 'match/result'; payload: { matchId: string; state: MatchView } }
-  | {
-      type: 'chat/message';
-      payload: {
-        channel: string;
-        userId: string;
-        message: string;
-        at: string;
-        messageId: string;
-        moderationState: ChatModerationState;
-        flags?: string[];
-      };
-    }
-  | { type: 'chat/system'; payload: { channel: string; message: string } }
-  | {
-      type: 'chat/messageUpdate';
-      payload: {
-        messageId: string;
-        channel: string;
-        moderationState: ChatModerationState;
-        flags?: string[];
-      };
-    }
   | { type: 'system/ping'; payload: Record<string, never> }
   | { type: 'error'; payload: { code: string; message: string } };
 
@@ -116,34 +92,40 @@ type ClientEnvelopeMeta = {
   ts?: string;
 };
 
-type ModerationReasonCategory =
-  | 'TOXIC'
-  | 'HATE'
-  | 'THREAT'
-  | 'SPAM'
-  | 'SEXUAL'
-  | 'EXTREMISM'
-  | 'OTHER';
-
 type ClientMessagePayload =
   | { type: 'auth/hello'; payload: { token: string; sessionId?: string } }
   | { type: 'match/queue'; payload: { mode: MatchMode; speciesId?: string; difficulty?: AIDifficulty } }
   | { type: 'match/cancelQueue'; payload: { mode: MatchMode } }
   | { type: 'match/command'; payload: { matchId: string; command: ClientCommand } }
-  | { type: 'chat/send'; payload: { channel: string; message: string } }
-  | { type: 'chat/join'; payload: { channel: string } }
-  | { type: 'chat/leave'; payload: { channel: string } }
-  | { type: 'chat/block'; payload: { targetUserId: string } }
-  | { type: 'chat/report'; payload: { messageId: string; category: ModerationReasonCategory; comment?: string } }
   | { type: 'system/pong'; payload: Record<string, never> };
 
 type ClientMessage = ClientEnvelopeMeta & ClientMessagePayload;
 
+type Route = 'home' | 'play' | 'team' | 'inventory' | 'shop' | 'market' | 'events' | 'settings';
+
+type ConnectionStatus = 'DISCONNECTED' | 'CONNECTING' | 'AUTHENTICATING' | 'READY';
+
+interface AppState {
+  route: Route;
+  userId: string | null;
+  sessionId: string | null;
+  bc: number;
+  connectionStatus: ConnectionStatus;
+  matchId: string | null;
+  lastMatchState: MatchView | null;
+}
+
+const state: AppState = {
+  route: 'home',
+  userId: null,
+  sessionId: null,
+  bc: 0,
+  connectionStatus: 'DISCONNECTED',
+  matchId: null,
+  lastMatchState: null,
+};
+
 let socket: WebSocket | null = null;
-let lastMatchState: MatchView | null = null;
-let currentMatchId: string | null = null;
-let userId: string | null = null;
-let sessionId: string | null = null;
 let outSeq = 0;
 
 function qs<T extends Element>(selector: string): T {
@@ -154,76 +136,314 @@ function qs<T extends Element>(selector: string): T {
   return el as T;
 }
 
-const statusEl = qs<HTMLDivElement>('#status');
-const battleEl = qs<HTMLDivElement>('#battle');
-const logEl = qs<HTMLDivElement>('#log');
-const btnConnect = qs<HTMLButtonElement>('#btn-connect');
-const btnStart = qs<HTMLButtonElement>('#btn-start');
-const btnAttack = qs<HTMLButtonElement>('#btn-attack');
-const btnItem = qs<HTMLButtonElement>('#btn-item');
-const selectSpecies = qs<HTMLSelectElement>('#select-species');
-const selectItem = qs<HTMLSelectElement>('#select-item');
+function setTopbarStatus(): void {
+  const userEl = qs<HTMLSpanElement>('#topbar-user');
+  const bcEl = qs<HTMLSpanElement>('#topbar-bc');
+  const wsEl = qs<HTMLSpanElement>('#topbar-ws');
 
-function setStatus(message: string): void {
-  statusEl.textContent = message;
+  userEl.textContent = state.userId ?? 'Guest';
+  bcEl.textContent = `BC: ${state.bc}`;
+  wsEl.textContent =
+    state.connectionStatus === 'READY'
+      ? 'WS: ready'
+      : state.connectionStatus === 'AUTHENTICATING'
+        ? 'WS: authenticating'
+        : state.connectionStatus === 'CONNECTING'
+          ? 'WS: connecting'
+          : 'WS: disconnected';
 }
 
-function renderBars(floran: MatchViewFloran): string {
-  const hpPct = Math.max(0, Math.min(100, (floran.hp / floran.maxHp) * 100));
-  const waterPct = Math.max(0, Math.min(100, (floran.currentWater / floran.capacity) * 100));
+function setNavActive(route: Route): void {
+  const buttons = document.querySelectorAll<HTMLButtonElement>('.nav-button');
+  buttons.forEach((btn) => {
+    const r = btn.dataset.route as Route | undefined;
+    btn.classList.toggle('active', r === route);
+  });
+}
 
-  return `
-    <div><strong>${floran.name}</strong></div>
-    <div>HP: ${floran.hp} / ${floran.maxHp}</div>
-    <div class="bar"><div class="bar-fill-hp" style="width:${hpPct}%"></div></div>
-    <div>Wasser: ${Math.round(floran.currentWater)} / ${floran.capacity}</div>
-    <div class="bar"><div class="bar-fill-water" style="width:${waterPct}%"></div></div>
-    <div style="margin-top:0.25rem;">
-      <span class="pill">Surface ${floran.surface.toFixed(2)}</span>
-      <span class="pill">Init ${floran.initiative}</span>
-      <span class="pill">Stacks ${floran.overWaterStacks}</span>
-      ${floran.rootRot ? '<span class="pill">Wurzelrot</span>' : ''}
+function setStatusBanner(message: string, isError = false): void {
+  const banner = document.querySelector<HTMLDivElement>('#status-banner');
+  if (!banner) return;
+  banner.textContent = message;
+  banner.className = 'status-banner' + (isError ? ' error' : '');
+}
+
+function renderHomeView(root: HTMLElement): void {
+  root.innerHTML = `
+    <div class="card">
+      <h2>Welcome to BioStrike</h2>
+      <p>Prototype client shell with navigation and a basic play view.</p>
+      <div style="margin-top:0.75rem;">
+        <button id="home-play" class="nav-button" style="width:auto;">Play now</button>
+      </div>
+    </div>
+  `;
+
+  const playBtn = qs<HTMLButtonElement>('#home-play');
+  playBtn.addEventListener('click', () => navigate('play'));
+}
+
+function renderPlayView(root: HTMLElement): void {
+  root.innerHTML = `
+    <div id="status-banner" class="status-banner"></div>
+    <div class="card" style="margin-top:0.5rem;">
+      <div class="controls">
+        <button id="btn-connect">Connect</button>
+        <button id="btn-start" disabled>Start match</button>
+        <button id="btn-attack" disabled>Attack</button>
+        <button id="btn-item" disabled>Use item</button>
+      </div>
+      <div style="margin:0.5rem 0;">
+        <label>
+          Your Floran:
+          <select id="select-species">
+            <option value="sunflower">Sunflower</option>
+            <option value="cactus">Cactus</option>
+            <option value="aloe">Aloe</option>
+            <option value="water_lily">Water Lily</option>
+            <option value="bamboo">Bamboo</option>
+            <option value="sundew">Sundew</option>
+          </select>
+        </label>
+        <label style="margin-left:0.75rem;">
+          Item:
+          <select id="select-item">
+            <option value="">(no item)</option>
+            <option value="watering_can">Watering can (+water)</option>
+            <option value="mulch">Mulch (-transpiration)</option>
+          </select>
+        </label>
+      </div>
+      <div id="battle"></div>
+    </div>
+    <div class="card">
+      <div class="log" id="log"></div>
+    </div>
+  `;
+
+  const btnConnect = qs<HTMLButtonElement>('#btn-connect');
+  const btnStart = qs<HTMLButtonElement>('#btn-start');
+  const btnAttack = qs<HTMLButtonElement>('#btn-attack');
+  const btnItem = qs<HTMLButtonElement>('#btn-item');
+  const selectSpecies = qs<HTMLSelectElement>('#select-species');
+  const selectItem = qs<HTMLSelectElement>('#select-item');
+
+  btnConnect.addEventListener('click', () => {
+    connectWebSocket();
+  });
+
+  btnStart.addEventListener('click', () => {
+    const playerSpeciesId = selectSpecies.value || 'sunflower';
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setStatusBanner('Not connected.', true);
+      return;
+    }
+    const msg: ClientMessage = {
+      id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
+      seq: outSeq,
+      ts: new Date().toISOString(),
+      type: 'match/queue',
+      payload: { mode: 'PVE_BOT', speciesId: playerSpeciesId, difficulty: 'easy' },
+    };
+    socket.send(JSON.stringify(msg));
+    btnStart.disabled = true;
+    setStatusBanner('Queued for PVE_BOT match ...');
+  });
+
+  btnAttack.addEventListener('click', () => {
+    if (!state.matchId) {
+      setStatusBanner('No active match.', true);
+      return;
+    }
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setStatusBanner('Not connected.', true);
+      return;
+    }
+    const msg: ClientMessage = {
+      id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
+      seq: outSeq,
+      ts: new Date().toISOString(),
+      type: 'match/command',
+      payload: { matchId: state.matchId, command: { type: 'ATTACK', targetIndex: 1 } },
+    };
+    socket.send(JSON.stringify(msg));
+  });
+
+  btnItem.addEventListener('click', () => {
+    const itemId = selectItem.value;
+    if (!itemId) {
+      setStatusBanner('Please select an item first.', true);
+      return;
+    }
+    if (!state.matchId) {
+      setStatusBanner('No active match.', true);
+      return;
+    }
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setStatusBanner('Not connected.', true);
+      return;
+    }
+
+    const msg: ClientMessage = {
+      id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
+      seq: outSeq,
+      ts: new Date().toISOString(),
+      type: 'match/command',
+      payload: {
+        matchId: state.matchId,
+        command: { type: 'ITEM', targetIndex: 0, itemId },
+      },
+    };
+    socket.send(JSON.stringify(msg));
+  });
+
+  selectItem.addEventListener('change', () => {
+    const canAct = !!state.lastMatchState && !state.lastMatchState.isFinished;
+    btnItem.disabled = !canAct || !selectItem.value;
+  });
+
+  // Initial button state based on current match.
+  const canAct = !!state.lastMatchState && !state.lastMatchState.isFinished;
+  btnStart.disabled = state.connectionStatus !== 'READY';
+  btnAttack.disabled = !canAct;
+  btnItem.disabled = !canAct || !selectItem.value;
+}
+
+function renderPlaceholderView(root: HTMLElement, title: string, description: string): void {
+  root.innerHTML = `
+    <div class="card">
+      <h2>${title}</h2>
+      <p>${description}</p>
     </div>
   `;
 }
 
-function renderBattle(state: MatchView): void {
-  const [you, enemy] = state.florans;
+function renderRoute(): void {
+  const root = qs<HTMLElement>('#view-root');
+  setNavActive(state.route);
+  setTopbarStatus();
+
+  switch (state.route) {
+    case 'home':
+      renderHomeView(root);
+      break;
+    case 'play':
+      renderPlayView(root);
+      break;
+    case 'team':
+      renderPlaceholderView(
+        root,
+        'Team-Builder / Herbarium',
+        'Team management and Herbarium UI will live here.',
+      );
+      break;
+    case 'inventory':
+      renderPlaceholderView(
+        root,
+        'Inventory',
+        'Inventory view for items, Floran boxes, bann cores and cosmetics.',
+      );
+      break;
+    case 'shop':
+      renderPlaceholderView(
+        root,
+        'Shop',
+        'NPC shop for essentials and cosmetics (hooked to backend /shop).',
+      );
+      break;
+    case 'market':
+      renderPlaceholderView(
+        root,
+        'Market',
+        'Player-to-player market UI (offers, filters, details).',
+      );
+      break;
+    case 'events':
+      renderPlaceholderView(
+        root,
+        'Events & Quests',
+        'LiveOps events and quest lists will be rendered here.',
+      );
+      break;
+    case 'settings':
+      renderPlaceholderView(
+        root,
+        'Settings',
+        'Client settings (audio, graphics, UI, telemetry) will be configurable here.',
+      );
+      break;
+  }
+}
+
+function navigate(route: Route): void {
+  state.route = route;
+  renderRoute();
+}
+
+function renderBattle(stateView: MatchView): void {
+  const battleEl = document.querySelector<HTMLDivElement>('#battle');
+  if (!battleEl) return;
+
+  const [you, enemy] = stateView.florans;
   const weatherText: Record<WeatherType, string> = {
-    HotDry: 'Heiß & Trocken',
-    CoolDry: 'Kühl & Trocken',
-    LightRain: 'Leichter Regen',
-    HeavyRain: 'Starker Regen',
-    Windy: 'Windig',
-    Cloudy: 'Bewölkt',
+    HotDry: 'Hot & Dry',
+    CoolDry: 'Cool & Dry',
+    LightRain: 'Light Rain',
+    HeavyRain: 'Heavy Rain',
+    Windy: 'Windy',
+    Cloudy: 'Cloudy',
+  };
+
+  const renderBars = (floran: MatchViewFloran): string => {
+    const hpPct = Math.max(0, Math.min(100, (floran.hp / floran.maxHp) * 100));
+    const waterPct = Math.max(0, Math.min(100, (floran.currentWater / floran.capacity) * 100));
+
+    return `
+      <div><strong>${floran.name}</strong></div>
+      <div>HP: ${floran.hp} / ${floran.maxHp}</div>
+      <div class="bar"><div class="bar-fill-hp" style="width:${hpPct}%"></div></div>
+      <div>Water: ${Math.round(floran.currentWater)} / ${floran.capacity}</div>
+      <div class="bar"><div class="bar-fill-water" style="width:${waterPct}%"></div></div>
+      <div style="margin-top:0.25rem;">
+        <span class="pill">Surface ${floran.surface.toFixed(2)}</span>
+        <span class="pill">Init ${floran.initiative}</span>
+        <span class="pill">Stacks ${floran.overWaterStacks}</span>
+        ${floran.rootRot ? '<span class="pill">Root Rot</span>' : ''}
+      </div>
+    `;
   };
 
   battleEl.innerHTML = `
     <div style="margin-bottom:0.5rem;">
-      <span class="pill">Runde ${state.round}</span>
-      <span class="pill">Phase ${state.phase}</span>
-      <span class="pill">Wetter: ${weatherText[state.weather]}</span>
+      <span class="pill">Round ${stateView.round}</span>
+      <span class="pill">Phase ${stateView.phase}</span>
+      <span class="pill">Weather: ${weatherText[stateView.weather]}</span>
       ${
-        state.isFinished
-          ? `<span class="pill">Matchende (${state.winnerIndex === 0 ? 'Sieg' : state.winnerIndex === 1 ? 'Niederlage' : 'Unentschieden'})</span>`
+        stateView.isFinished
+          ? `<span class="pill">Result: ${
+              stateView.winnerIndex === 0 ? 'Win' : stateView.winnerIndex === 1 ? 'Loss' : 'Draw'
+            }</span>`
           : ''
       }
     </div>
     <div class="floran-row">
       <div style="flex:1; margin-right:1rem;">
-        <h4>Du</h4>
+        <h4>You</h4>
         ${renderBars(you)}
       </div>
       <div style="flex:1;">
-        <h4>Gegner</h4>
+        <h4>Opponent</h4>
         ${renderBars(enemy)}
       </div>
     </div>
   `;
 }
 
-function renderLogs(state: MatchView): void {
-  const lines = state.logs.map((entry) => {
+function renderLogs(stateView: MatchView): void {
+  const logEl = document.querySelector<HTMLDivElement>('#log');
+  if (!logEl) return;
+
+  const lines = stateView.logs.map((entry) => {
     const phase = entry.phase.padEnd(18, ' ');
     return `[R${entry.round.toString().padStart(2, '0')}] ${phase} :: ${entry.message}`;
   });
@@ -234,10 +454,15 @@ function renderLogs(state: MatchView): void {
 
 function handleServerMessage(message: ServerMessage): void {
   if (message.type === 'auth/ok') {
-    userId = message.payload.userId;
-    sessionId = message.payload.sessionId;
-    setStatus(`Angemeldet als ${userId} (Session ${sessionId}).`);
-    btnStart.disabled = false;
+    state.userId = message.payload.userId;
+    state.sessionId = message.payload.sessionId;
+    state.connectionStatus = 'READY';
+    setTopbarStatus();
+    setStatusBanner(`Authenticated as ${message.payload.userId}.`);
+    const btnStart = document.querySelector<HTMLButtonElement>('#btn-start');
+    if (btnStart) {
+      btnStart.disabled = false;
+    }
     return;
   }
 
@@ -249,81 +474,92 @@ function handleServerMessage(message: ServerMessage): void {
       type: 'system/pong',
       payload: {},
     };
-    sendClientMessage(pong);
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(pong));
+    }
     return;
   }
 
   if (message.type === 'auth/error') {
-    setStatus(`Auth-Fehler: ${message.payload.message}`);
+    setStatusBanner(`Auth error: ${message.payload.message}`, true);
+    state.connectionStatus = 'DISCONNECTED';
+    setTopbarStatus();
     return;
   }
 
   if (message.type === 'error') {
-    setStatus(`Fehler: ${message.payload.message}`);
+    setStatusBanner(`Error: ${message.payload.message}`, true);
     return;
   }
 
   if (message.type === 'match/queued') {
-    setStatus(`In Warteschlange (${message.payload.mode}) ...`);
+    setStatusBanner(`Queued for ${message.payload.mode} ...`);
     return;
   }
 
   if (message.type === 'match/found') {
-    currentMatchId = message.payload.matchId;
-    setStatus(`Match gefunden (${message.payload.mode}).`);
+    state.matchId = message.payload.matchId;
+    setStatusBanner(`Match found (${message.payload.mode}).`);
     return;
   }
 
   if (message.type === 'match/state') {
-    currentMatchId = message.payload.matchId;
-    lastMatchState = message.payload.state;
+    state.matchId = message.payload.matchId;
+    state.lastMatchState = message.payload.state;
     renderBattle(message.payload.state);
     renderLogs(message.payload.state);
 
     const canAct = !message.payload.state.isFinished;
-    btnAttack.disabled = !canAct;
-    btnItem.disabled = !canAct || !selectItem.value;
-    btnStart.disabled = false;
+    const btnAttack = document.querySelector<HTMLButtonElement>('#btn-attack');
+    const btnItem = document.querySelector<HTMLButtonElement>('#btn-item');
+    const selectItem = document.querySelector<HTMLSelectElement>('#select-item');
+
+    if (btnAttack) btnAttack.disabled = !canAct;
+    if (btnItem) btnItem.disabled = !canAct || !selectItem?.value;
+    const btnStart = document.querySelector<HTMLButtonElement>('#btn-start');
+    if (btnStart) btnStart.disabled = false;
     return;
   }
 
   if (message.type === 'match/result') {
-    lastMatchState = message.payload.state;
+    state.lastMatchState = message.payload.state;
     renderBattle(message.payload.state);
     renderLogs(message.payload.state);
-    setStatus('Match beendet.');
-    currentMatchId = null;
-    btnAttack.disabled = true;
-    btnItem.disabled = true;
-    return;
-  }
-
-  if (message.type === 'chat/message') {
-    // Chat wird aktuell nicht visualisiert, könnte später ergänzt werden.
+    setStatusBanner('Match finished.');
+    state.matchId = null;
+    const btnAttack = document.querySelector<HTMLButtonElement>('#btn-attack');
+    const btnItem = document.querySelector<HTMLButtonElement>('#btn-item');
+    if (btnAttack) btnAttack.disabled = true;
+    if (btnItem) btnItem.disabled = true;
     return;
   }
 }
 
-function connect(): void {
+function connectWebSocket(): void {
   if (socket && socket.readyState === WebSocket.OPEN) {
+    setStatusBanner('Already connected.');
     return;
   }
 
-  setStatus('Verbinde zu ws://localhost:3000 ...');
+  state.connectionStatus = 'CONNECTING';
+  setTopbarStatus();
+  setStatusBanner('Connecting to ws://localhost:3000 ...');
 
   socket = new WebSocket('ws://localhost:3000');
 
   socket.addEventListener('open', () => {
+    state.connectionStatus = 'AUTHENTICATING';
+    setTopbarStatus();
     const token = `guest_${Math.random().toString(36).slice(2, 8)}`;
     const msg: ClientMessage = {
       id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
       seq: outSeq,
       ts: new Date().toISOString(),
       type: 'auth/hello',
-      payload: { token, sessionId: sessionId ?? undefined },
+      payload: { token, sessionId: state.sessionId ?? undefined },
     };
-    sendClientMessage(msg);
-    setStatus('Verbunden. Authentifiziere...');
+    socket?.send?.(JSON.stringify(msg));
+    setStatusBanner('Connected. Authenticating ...');
   });
 
   socket.addEventListener('message', (event) => {
@@ -331,94 +567,46 @@ function connect(): void {
       const parsed = JSON.parse(event.data as string) as ServerMessage;
       handleServerMessage(parsed);
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.error('Invalid message', err);
     }
   });
 
   socket.addEventListener('close', () => {
-    setStatus('Verbindung geschlossen.');
-    btnStart.disabled = true;
-    btnAttack.disabled = true;
-    btnItem.disabled = true;
+    setStatusBanner('Connection closed.', true);
+    state.connectionStatus = 'DISCONNECTED';
+    setTopbarStatus();
+    const btnStart = document.querySelector<HTMLButtonElement>('#btn-start');
+    const btnAttack = document.querySelector<HTMLButtonElement>('#btn-attack');
+    const btnItem = document.querySelector<HTMLButtonElement>('#btn-item');
+    if (btnStart) btnStart.disabled = true;
+    if (btnAttack) btnAttack.disabled = true;
+    if (btnItem) btnItem.disabled = true;
     socket = null;
-    currentMatchId = null;
+    state.matchId = null;
   });
 
   socket.addEventListener('error', () => {
-    setStatus('WebSocket-Fehler.');
+    setStatusBanner('WebSocket error.', true);
   });
 }
 
-function sendClientMessage(message: ClientMessage): void {
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    setStatus('Nicht verbunden.');
-    return;
-  }
-
-  socket.send(JSON.stringify(message));
+function initNavigation(): void {
+  const buttons = document.querySelectorAll<HTMLButtonElement>('.nav-button');
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const route = btn.dataset.route as Route | undefined;
+      if (route) {
+        navigate(route);
+      }
+    });
+  });
 }
 
-btnConnect.addEventListener('click', () => {
-  connect();
-});
+function init(): void {
+  initNavigation();
+  renderRoute();
+}
 
-btnStart.addEventListener('click', () => {
-  const playerSpeciesId = selectSpecies.value || 'sunflower';
-  const msg: ClientMessage = {
-    id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
-    seq: outSeq,
-    ts: new Date().toISOString(),
-    type: 'match/queue',
-    payload: { mode: 'PVE_BOT', speciesId: playerSpeciesId, difficulty: 'easy' },
-  };
-  sendClientMessage(msg);
-  btnAttack.disabled = false;
-  btnItem.disabled = !selectItem.value;
-});
+init();
 
-btnAttack.addEventListener('click', () => {
-  if (!currentMatchId) {
-    setStatus('Kein aktives Match.');
-    return;
-  }
-  const msg: ClientMessage = {
-    id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
-    seq: outSeq,
-    ts: new Date().toISOString(),
-    type: 'match/command',
-    payload: { matchId: currentMatchId, command: { type: 'ATTACK', targetIndex: 1 } },
-  };
-  sendClientMessage(msg);
-});
-
-btnItem.addEventListener('click', () => {
-  const itemId = selectItem.value;
-  if (!itemId) {
-    setStatus('Bitte zuerst ein Item auswählen.');
-    return;
-  }
-  if (!currentMatchId) {
-    setStatus('Kein aktives Match.');
-    return;
-  }
-
-  const msg: ClientMessage = {
-    id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
-    seq: outSeq,
-    ts: new Date().toISOString(),
-    type: 'match/command',
-    payload: {
-      matchId: currentMatchId,
-      command: { type: 'ITEM', targetIndex: 0, itemId },
-    },
-  };
-  sendClientMessage(msg);
-});
-
-selectItem.addEventListener('change', () => {
-  const canAct = !!lastMatchState && !lastMatchState.isFinished;
-  btnItem.disabled = !canAct || !selectItem.value;
-});
-
-// Auto-connect in dev environments to reduce clicks.
-connect();
