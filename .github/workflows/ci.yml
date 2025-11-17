@@ -10,29 +10,50 @@ on:
   workflow_dispatch:   # optional: für manuelles Deployment
 
 jobs:
-  # 1) Commit-Meldung (optional – nur wenn du getrennte Commit-Infos willst)
+  # 1) Commit-Meldung
   notify-commit:
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
 
     steps:
       - name: Notify Discord about commit
+        shell: bash
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_COMMITS_WEBHOOK_URL }}
         run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "FEHLER: DISCORD_WEBHOOK_URL (Commits) ist leer."
+            exit 1
+          fi
+
           COMMIT_URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
           payload=$(cat <<EOF
           {
-            "content": ":pencil2: Neuer Commit in **${GITHUB_REPOSITORY}** auf Branch **${GITHUB_REF_NAME}** von **${GITHUB_ACTOR}**\n${COMMIT_URL}"
+            "username": "BioStrike CI",
+            "embeds": [{
+              "title": "Neuer Commit auf ${GITHUB_REF_NAME}",
+              "url": "${COMMIT_URL}",
+              "description": "Repo: **${GITHUB_REPOSITORY}**",
+              "color": 3447003,
+              "fields": [
+                { "name": "Author", "value": "${GITHUB_ACTOR}", "inline": true },
+                { "name": "Commit", "value": "\`${SHORT_SHA}\`", "inline": true },
+                { "name": "Event", "value": "${GITHUB_EVENT_NAME}", "inline": true }
+              ],
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            }]
           }
           EOF
           )
+
           curl -X POST \
             -H "Content-Type: application/json" \
             -d "$payload" \
             "$DISCORD_WEBHOOK_URL"
 
-  # 2) dein unveränderter Build-Job
+  # 2) Build / CI
   build:
     runs-on: ubuntu-latest
     # läuft bei push + PR
@@ -59,37 +80,81 @@ jobs:
           cd client && npx tsc --noEmit
       # Unit tests können in Zukunft ergänzt werden
 
-      # Discord: Build erfolgreich
+      # Discord: Build erfolgreich (Embed)
       - name: Notify Discord on build success
         if: ${{ success() }}
+        shell: bash
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_BUILDS_WEBHOOK_URL }}
         run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "FEHLER: DISCORD_WEBHOOK_URL (Builds) ist leer."
+            exit 1
+          fi
+
           RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
           payload=$(cat <<EOF
           {
-            "content": ":white_check_mark: Build erfolgreich für **${GITHUB_REPOSITORY}** auf Branch **${GITHUB_REF_NAME}**\nDetails: ${RUN_URL}"
+            "username": "BioStrike CI",
+            "embeds": [{
+              "title": "✅ Build erfolgreich",
+              "url": "${RUN_URL}",
+              "description": "Repo: **${GITHUB_REPOSITORY}**\\nBranch: **${GITHUB_REF_NAME}**",
+              "color": 5763719,
+              "fields": [
+                { "name": "Workflow", "value": "${GITHUB_WORKFLOW}", "inline": true },
+                { "name": "Run ID", "value": "${GITHUB_RUN_ID}", "inline": true },
+                { "name": "Commit", "value": "\`${SHORT_SHA}\`", "inline": true },
+                { "name": "Actor", "value": "${GITHUB_ACTOR}", "inline": true }
+              ],
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            }]
           }
           EOF
           )
+
           curl -X POST \
             -H "Content-Type: application/json" \
             -d "$payload" \
             "$DISCORD_WEBHOOK_URL"
 
-      # Discord: Build fehlgeschlagen
+      # Discord: Build fehlgeschlagen (Embed)
       - name: Notify Discord on build failure
         if: ${{ failure() }}
+        shell: bash
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_BUILDS_WEBHOOK_URL }}
         run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "FEHLER: DISCORD_WEBHOOK_URL (Builds) ist leer."
+            exit 1
+          fi
+
           RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
           payload=$(cat <<EOF
           {
-            "content": ":x: Build **fehlgeschlagen** für **${GITHUB_REPOSITORY}** auf Branch **${GITHUB_REF_NAME}**\nDetails: ${RUN_URL}"
+            "username": "BioStrike CI",
+            "embeds": [{
+              "title": "❌ Build fehlgeschlagen",
+              "url": "${RUN_URL}",
+              "description": "Repo: **${GITHUB_REPOSITORY}**\\nBranch: **${GITHUB_REF_NAME}**",
+              "color": 15548997,
+              "fields": [
+                { "name": "Workflow", "value": "${GITHUB_WORKFLOW}", "inline": true },
+                { "name": "Run ID", "value": "${GITHUB_RUN_ID}", "inline": true },
+                { "name": "Commit", "value": "\`${SHORT_SHA}\`", "inline": true },
+                { "name": "Actor", "value": "${GITHUB_ACTOR}", "inline": true }
+              ],
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            }]
           }
           EOF
           )
+
           curl -X POST \
             -H "Content-Type: application/json" \
             -d "$payload" \
@@ -112,35 +177,79 @@ jobs:
         run: |
           echo "TODO: Dein echtes Deployment-Kommando eintragen (ssh, docker, etc.)"
 
+      # Deployment erfolgreich
       - name: Notify Discord on deployment success
         if: ${{ success() }}
+        shell: bash
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOYS_WEBHOOK_URL }}
         run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "FEHLER: DISCORD_WEBHOOK_URL (Deploys) ist leer."
+            exit 1
+          fi
+
           RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
           payload=$(cat <<EOF
           {
-            "content": ":rocket: Deployment erfolgreich für **${GITHUB_REPOSITORY}** (Run: ${RUN_URL})"
+            "username": "BioStrike CI",
+            "embeds": [{
+              "title": "🚀 Deployment erfolgreich",
+              "url": "${RUN_URL}",
+              "description": "Repo: **${GITHUB_REPOSITORY}**",
+              "color": 5763719,
+              "fields": [
+                { "name": "Run ID", "value": "${GITHUB_RUN_ID}", "inline": true },
+                { "name": "Commit", "value": "\`${SHORT_SHA}\`", "inline": true },
+                { "name": "Actor", "value": "${GITHUB_ACTOR}", "inline": true }
+              ],
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            }]
           }
           EOF
           )
+
           curl -X POST \
             -H "Content-Type: application/json" \
             -d "$payload" \
             "$DISCORD_WEBHOOK_URL"
 
+      # Deployment fehlgeschlagen
       - name: Notify Discord on deployment failure
         if: ${{ failure() }}
+        shell: bash
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOYS_WEBHOOK_URL }}
         run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "FEHLER: DISCORD_WEBHOOK_URL (Deploys) ist leer."
+            exit 1
+          fi
+
           RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
           payload=$(cat <<EOF
           {
-            "content": ":warning: Deployment **fehlgeschlagen** für **${GITHUB_REPOSITORY}** (Run: ${RUN_URL})"
+            "username": "BioStrike CI",
+            "embeds": [{
+              "title": "⚠️ Deployment fehlgeschlagen",
+              "url": "${RUN_URL}",
+              "description": "Repo: **${GITHUB_REPOSITORY}**",
+              "color": 15548997,
+              "fields": [
+                { "name": "Run ID", "value": "${GITHUB_RUN_ID}", "inline": true },
+                { "name": "Commit", "value": "\`${SHORT_SHA}\`", "inline": true },
+                { "name": "Actor", "value": "${GITHUB_ACTOR}", "inline": true }
+              ],
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            }]
           }
           EOF
           )
+
           curl -X POST \
             -H "Content-Type: application/json" \
             -d "$payload" \
