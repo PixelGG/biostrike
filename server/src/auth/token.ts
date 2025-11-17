@@ -2,6 +2,8 @@ import { logger } from '../core/logger';
 
 export interface AuthClaims {
   userId: string;
+  sessionId: string;
+  expiresAt: number;
 }
 
 /**
@@ -17,7 +19,8 @@ export async function validateToken(token: string): Promise<AuthClaims | null> {
 
   // For now, treat the token string itself as the userId.
   const userId = trimmed;
-  logger.debug('Token validated (stub)', { userId });
-  return { userId };
+  const sessionId = `sess_${Math.random().toString(36).slice(2, 10)}`;
+  const expiresAt = Date.now() + 60 * 60 * 1000; // 1h TTL prototype
+  logger.debug('Token validated (stub)', { userId, sessionId });
+  return { userId, sessionId, expiresAt };
 }
-

@@ -5,22 +5,35 @@ import { validateToken } from '../auth/token';
 import {
   AIDifficulty,
   ClientMessage,
+  ClientMessagePayload,
   Command,
   CommandType,
+  EnvelopeMeta,
   MatchMode,
   MatchView,
   ServerMessage,
+  ServerMessagePayload,
 } from '../types';
 import { Match } from '../match';
 import { createFloranInstance } from '../data/florans';
 import { chooseBotCommand } from '../ai';
 
+type ConnectionState = 'AUTHENTICATING' | 'READY' | 'THROTTLED' | 'CLOSING' | 'CLOSED';
+
 interface ConnectionContext {
   userId?: string;
+  sessionId?: string;
   authenticated: boolean;
   difficulty: AIDifficulty;
   matchId?: string;
   lastSeen: number;
+  state: ConnectionState;
+  // Rate limiting
+  windowStart: number;
+  msgCountInWindow: number;
+  throttleUntil?: number;
+  // Outgoing sequence counter
+  outSeq: number;
 }
 
 interface MatchRecord {
@@ -34,17 +47,54 @@ interface MatchRecord {
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 120_000;
+const MAX_MSG_PER_SECOND = 50;
+const THROTTLE_DURATION_MS = 5_000;
+const MAX_BUFFERED_BYTES = 1_000_000;
 
 const sockets = new Set<WebSocket>();
 const contexts = new WeakMap<WebSocket, ConnectionContext>();
 const userSockets = new Map<string, Set<WebSocket>>();
 const matches = new Map<string, MatchRecord>();
 
-function sendMessage(socket: WebSocket, message: ServerMessage): void {
+function makeEnvelopeMeta(ctx: ConnectionContext): EnvelopeMeta {
+  ctx.outSeq += 1;
+  return {
+    id: `srv_${Date.now().toString(36)}_${ctx.outSeq.toString(36)}`,
+    seq: ctx.outSeq,
+    ts: new Date().toISOString(),
+  };
+}
+
+function sendMessage(
+  socket: WebSocket,
+  ctx: ConnectionContext | undefined,
+  payload: ServerMessagePayload,
+): void {
+  if (socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+    logger.warn('Closing connection due to excessive bufferedAmount', {
+      bufferedAmount: socket.bufferedAmount,
+    });
+    socket.close();
+    return;
+  }
+
+  const meta = ctx ? makeEnvelopeMeta(ctx) : { id: 'srv_' + Date.now().toString(36) };
+  const message: ServerMessage = {
+    ...(meta as EnvelopeMeta),
+    ...payload,
+  };
+
   socket.send(JSON.stringify(message));
 }
 
-function broadcastToMatch(matchId: string, payloadFactory: (state: MatchView) => ServerMessage) {
+function broadcastToMatch(
+  matchId: string,
+  payloadFactory: (state: MatchView) => ServerMessagePayload,
+) {
   const record = matches.get(matchId);
   if (!record) {
     return;
@@ -55,7 +105,8 @@ function broadcastToMatch(matchId: string, payloadFactory: (state: MatchView) =>
     const set = userSockets.get(userId);
     if (!set) continue;
     for (const socket of set) {
-      sendMessage(socket, payloadFactory(state));
+      const ctx = contexts.get(socket);
+      sendMessage(socket, ctx, payloadFactory(state));
     }
   }
 }
@@ -91,8 +142,8 @@ function handleAuthHello(
   ctx: ConnectionContext,
   msg: Extract<ClientMessage, { type: 'auth/hello' }>,
 ) {
-  if (ctx.authenticated) {
-    sendMessage(socket, {
+  if (ctx.authenticated || ctx.state !== 'AUTHENTICATING') {
+    sendMessage(socket, ctx, {
       type: 'auth/error',
       payload: { code: 'already_authenticated', message: 'Connection already authenticated.' },
     });
@@ -103,27 +154,30 @@ function handleAuthHello(
   validateToken(token)
     .then((claims) => {
       if (!claims) {
-        sendMessage(socket, {
+        sendMessage(socket, ctx, {
           type: 'auth/error',
           payload: { code: 'invalid_token', message: 'Invalid auth token.' },
         });
+        ctx.state = 'CLOSING';
         socket.close();
         return;
       }
 
       ctx.userId = claims.userId;
       ctx.authenticated = true;
+      ctx.state = 'READY';
+      ctx.sessionId = claims.sessionId;
       registerSocketForUser(claims.userId, socket);
 
       logger.info('WS authenticated', { userId: claims.userId });
-      sendMessage(socket, {
+      sendMessage(socket, ctx, {
         type: 'auth/ok',
-        payload: { userId: claims.userId },
+        payload: { userId: claims.userId, sessionId: ctx.sessionId! },
       });
     })
     .catch((err) => {
       logger.error('Token validation failed', { error: String(err) });
-      sendMessage(socket, {
+      sendMessage(socket, ctx, {
         type: 'auth/error',
         payload: { code: 'auth_failure', message: 'Authentication failed.' },
       });
@@ -136,8 +190,8 @@ function handleMatchQueue(
   ctx: ConnectionContext,
   msg: Extract<ClientMessage, { type: 'match/queue' }>,
 ) {
-  if (!ctx.authenticated || !ctx.userId) {
-    sendMessage(socket, {
+  if (!ctx.authenticated || !ctx.userId || ctx.state !== 'READY') {
+    sendMessage(socket, ctx, {
       type: 'auth/error',
       payload: { code: 'unauthenticated', message: 'Authenticate first via auth/hello.' },
     });
@@ -148,7 +202,7 @@ function handleMatchQueue(
   const effectiveMode: MatchMode = mode ?? 'PVE_BOT';
 
   if (effectiveMode !== 'PVE_BOT') {
-    sendMessage(socket, {
+    sendMessage(socket, ctx, {
       type: 'error',
       payload: {
         code: 'mode_not_supported',
@@ -182,7 +236,7 @@ function handleMatchQueue(
 
   const state = match.getState();
 
-  sendMessage(socket, {
+  sendMessage(socket, ctx, {
     type: 'match/found',
     payload: {
       matchId,
@@ -190,7 +244,7 @@ function handleMatchQueue(
     },
   });
 
-  sendMessage(socket, {
+  sendMessage(socket, ctx, {
     type: 'match/state',
     payload: {
       matchId,
@@ -204,8 +258,8 @@ function handleMatchCommand(
   ctx: ConnectionContext,
   msg: Extract<ClientMessage, { type: 'match/command' }>,
 ) {
-  if (!ctx.authenticated || !ctx.userId) {
-    sendMessage(socket, {
+  if (!ctx.authenticated || !ctx.userId || ctx.state !== 'READY') {
+    sendMessage(socket, ctx, {
       type: 'auth/error',
       payload: { code: 'unauthenticated', message: 'Authenticate first via auth/hello.' },
     });
@@ -214,7 +268,7 @@ function handleMatchCommand(
 
   const { matchId, command } = msg.payload;
   if (!matchId || !command) {
-    sendMessage(socket, {
+    sendMessage(socket, ctx, {
       type: 'error',
       payload: { code: 'invalid_payload', message: 'matchId and command are required.' },
     });
@@ -223,7 +277,7 @@ function handleMatchCommand(
 
   const record = matches.get(matchId);
   if (!record) {
-    sendMessage(socket, {
+    sendMessage(socket, ctx, {
       type: 'error',
       payload: { code: 'match_not_found', message: 'Match not found.' },
     });
@@ -231,7 +285,7 @@ function handleMatchCommand(
   }
 
   if (!record.players.includes(ctx.userId)) {
-    sendMessage(socket, {
+    sendMessage(socket, ctx, {
       type: 'error',
       payload: { code: 'not_in_match', message: 'You are not a participant of this match.' },
     });
@@ -276,6 +330,10 @@ export function attachWebSocketGateway(server: http.Server): void {
       authenticated: false,
       difficulty: 'easy',
       lastSeen: Date.now(),
+      state: 'AUTHENTICATING',
+      windowStart: Date.now(),
+      msgCountInWindow: 0,
+      outSeq: 0,
     };
     contexts.set(socket, context);
 
@@ -286,13 +344,46 @@ export function attachWebSocketGateway(server: http.Server): void {
 
       let msg: ClientMessage;
       try {
-        msg = JSON.parse(raw.toString());
+        msg = JSON.parse(raw.toString()) as ClientMessage;
       } catch {
-        sendMessage(socket, {
+        sendMessage(socket, context, {
           type: 'error',
           payload: { code: 'invalid_json', message: 'Invalid JSON message.' },
         });
         return;
+      }
+
+      // Basic per-connection rate limiting.
+      const now = Date.now();
+      if (now - context.windowStart > 1000) {
+        context.windowStart = now;
+        context.msgCountInWindow = 0;
+      }
+      context.msgCountInWindow += 1;
+      if (context.msgCountInWindow > MAX_MSG_PER_SECOND) {
+        context.state = 'THROTTLED';
+        context.throttleUntil = now + THROTTLE_DURATION_MS;
+        logger.warn('Connection throttled due to rate limit', {
+          userId: context.userId,
+        });
+        sendMessage(socket, context, {
+          type: 'error',
+          payload: {
+            code: 'rate_limited',
+            message: 'Too many messages per second. Please slow down.',
+          },
+        });
+        return;
+      }
+
+      if (context.state === 'THROTTLED' && context.throttleUntil && now < context.throttleUntil) {
+        // Drop non-system messages while throttled.
+        if (msg.type !== 'system/pong') {
+          return;
+        }
+      } else if (context.state === 'THROTTLED' && context.throttleUntil && now >= context.throttleUntil) {
+        context.state = context.authenticated ? 'READY' : 'AUTHENTICATING';
+        context.throttleUntil = undefined;
       }
 
       switch (msg.type) {
@@ -304,7 +395,7 @@ export function attachWebSocketGateway(server: http.Server): void {
           break;
         case 'match/cancelQueue':
           // No real queue yet; acknowledge for future compatibility.
-          sendMessage(socket, {
+          sendMessage(socket, context, {
             type: 'match/queued',
             payload: { mode: msg.payload.mode },
           });
@@ -315,13 +406,13 @@ export function attachWebSocketGateway(server: http.Server): void {
         case 'chat/send':
           // Basic echo-style chat for now.
           if (!context.userId) {
-            sendMessage(socket, {
+            sendMessage(socket, context, {
               type: 'error',
               payload: { code: 'unauthenticated', message: 'Authenticate first via auth/hello.' },
             });
             return;
           }
-          sendMessage(socket, {
+          sendMessage(socket, context, {
             type: 'chat/message',
             payload: {
               channel: msg.payload.channel,
@@ -331,8 +422,11 @@ export function attachWebSocketGateway(server: http.Server): void {
             },
           });
           break;
+        case 'system/pong':
+          // Heartbeat response, nothing else to do.
+          break;
         default:
-          sendMessage(socket, {
+          sendMessage(socket, context, {
             type: 'error',
             payload: { code: 'unknown_type', message: `Unknown message type: ${(msg as any).type}` },
           });
@@ -355,10 +449,16 @@ export function attachWebSocketGateway(server: http.Server): void {
       if (!ctx) continue;
       if (now - ctx.lastSeen > HEARTBEAT_TIMEOUT_MS) {
         logger.warn('Closing idle WebSocket connection', { lastSeen: ctx.lastSeen });
+        ctx.state = 'CLOSING';
         socket.terminate();
         unregisterSocket(socket);
         contexts.delete(socket);
         sockets.delete(socket);
+        continue;
+      }
+
+      if (ctx.state === 'READY' && now - ctx.lastSeen > HEARTBEAT_INTERVAL_MS) {
+        sendMessage(socket, ctx, { type: 'system/ping', payload: {} });
       }
     }
   }, HEARTBEAT_INTERVAL_MS);

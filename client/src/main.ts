@@ -62,15 +62,24 @@ interface MatchView {
 type MatchMode = 'PVE_BOT' | 'PVP_CASUAL' | 'PVP_RANKED';
 type AIDifficulty = 'easy' | 'normal' | 'hard';
 
-type ServerMessage =
-  | { type: 'auth/ok'; payload: { userId: string } }
+type ServerEnvelopeMeta = {
+  id: string;
+  seq?: number;
+  ts?: string;
+};
+
+type ServerMessagePayload =
+  | { type: 'auth/ok'; payload: { userId: string; sessionId: string } }
   | { type: 'auth/error'; payload: { code: string; message: string } }
   | { type: 'match/queued'; payload: { mode: MatchMode } }
   | { type: 'match/found'; payload: { matchId: string; mode: MatchMode; opponent?: { userId: string } } }
   | { type: 'match/state'; payload: { matchId: string; state: MatchView } }
   | { type: 'match/result'; payload: { matchId: string; state: MatchView } }
   | { type: 'chat/message'; payload: { channel: string; userId: string; message: string; at: string } }
+  | { type: 'system/ping'; payload: Record<string, never> }
   | { type: 'error'; payload: { code: string; message: string } };
+
+type ServerMessage = ServerEnvelopeMeta & ServerMessagePayload;
 
 type ClientCommand = {
   type: 'ATTACK' | 'ITEM';
@@ -78,17 +87,28 @@ type ClientCommand = {
   itemId?: string;
 };
 
-type ClientMessage =
-  | { type: 'auth/hello'; payload: { token: string } }
+type ClientEnvelopeMeta = {
+  id: string;
+  seq?: number;
+  ts?: string;
+};
+
+type ClientMessagePayload =
+  | { type: 'auth/hello'; payload: { token: string; sessionId?: string } }
   | { type: 'match/queue'; payload: { mode: MatchMode; speciesId?: string; difficulty?: AIDifficulty } }
   | { type: 'match/cancelQueue'; payload: { mode: MatchMode } }
   | { type: 'match/command'; payload: { matchId: string; command: ClientCommand } }
-  | { type: 'chat/send'; payload: { channel: string; message: string } };
+  | { type: 'chat/send'; payload: { channel: string; message: string } }
+  | { type: 'system/pong'; payload: Record<string, never> };
+
+type ClientMessage = ClientEnvelopeMeta & ClientMessagePayload;
 
 let socket: WebSocket | null = null;
 let lastMatchState: MatchView | null = null;
 let currentMatchId: string | null = null;
 let userId: string | null = null;
+let sessionId: string | null = null;
+let outSeq = 0;
 
 function qs<T extends Element>(selector: string): T {
   const el = document.querySelector(selector);
@@ -179,8 +199,21 @@ function renderLogs(state: MatchView): void {
 function handleServerMessage(message: ServerMessage): void {
   if (message.type === 'auth/ok') {
     userId = message.payload.userId;
-    setStatus(`Angemeldet als ${userId}.`);
+    sessionId = message.payload.sessionId;
+    setStatus(`Angemeldet als ${userId} (Session ${sessionId}).`);
     btnStart.disabled = false;
+    return;
+  }
+
+  if (message.type === 'system/ping') {
+    const pong: ClientMessage = {
+      id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
+      seq: outSeq,
+      ts: new Date().toISOString(),
+      type: 'system/pong',
+      payload: {},
+    };
+    sendClientMessage(pong);
     return;
   }
 
@@ -246,7 +279,13 @@ function connect(): void {
 
   socket.addEventListener('open', () => {
     const token = `guest_${Math.random().toString(36).slice(2, 8)}`;
-    const msg: ClientMessage = { type: 'auth/hello', payload: { token } };
+    const msg: ClientMessage = {
+      id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
+      seq: outSeq,
+      ts: new Date().toISOString(),
+      type: 'auth/hello',
+      payload: { token, sessionId: sessionId ?? undefined },
+    };
     sendClientMessage(msg);
     setStatus('Verbunden. Authentifiziere...');
   });
@@ -290,6 +329,9 @@ btnConnect.addEventListener('click', () => {
 btnStart.addEventListener('click', () => {
   const playerSpeciesId = selectSpecies.value || 'sunflower';
   const msg: ClientMessage = {
+    id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
+    seq: outSeq,
+    ts: new Date().toISOString(),
     type: 'match/queue',
     payload: { mode: 'PVE_BOT', speciesId: playerSpeciesId, difficulty: 'easy' },
   };
@@ -304,6 +346,9 @@ btnAttack.addEventListener('click', () => {
     return;
   }
   const msg: ClientMessage = {
+    id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
+    seq: outSeq,
+    ts: new Date().toISOString(),
     type: 'match/command',
     payload: { matchId: currentMatchId, command: { type: 'ATTACK', targetIndex: 1 } },
   };
@@ -322,6 +367,9 @@ btnItem.addEventListener('click', () => {
   }
 
   const msg: ClientMessage = {
+    id: `cli_${Date.now().toString(36)}_${(++outSeq).toString(36)}`,
+    seq: outSeq,
+    ts: new Date().toISOString(),
     type: 'match/command',
     payload: {
       matchId: currentMatchId,
@@ -338,4 +386,3 @@ selectItem.addEventListener('change', () => {
 
 // Auto-connect in dev environments to reduce clicks.
 connect();
-

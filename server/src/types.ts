@@ -237,12 +237,26 @@ export interface Command {
   itemId?: string;
 }
 
-// WebSocket messages used between client and server.
-export type ClientMessage =
+export interface EnvelopeMeta {
+  id: string;
+  /**
+   * Optional sequence number for ordering and resume semantics.
+   */
+  seq?: number;
+  /**
+   * ISO timestamp of when the sender created the message.
+   */
+  ts?: string;
+}
+
+// WebSocket payloads used between client and server.
+export type ClientMessagePayload =
   | {
       type: 'auth/hello';
       payload: {
         token: string;
+        // Optional future extension: existing sessionId for resume.
+        sessionId?: string;
       };
     }
   | {
@@ -272,12 +286,18 @@ export type ClientMessage =
         channel: string;
         message: string;
       };
+    }
+  | {
+      type: 'system/pong';
+      payload: Record<string, never>;
     };
 
-export type ServerMessage =
+export type ClientMessage = EnvelopeMeta & ClientMessagePayload;
+
+export type ServerMessagePayload =
   | {
       type: 'auth/ok';
-      payload: { userId: string };
+      payload: { userId: string; sessionId: string };
     }
   | {
       type: 'auth/error';
@@ -321,4 +341,10 @@ export type ServerMessage =
   | {
       type: 'error';
       payload: { code: string; message: string };
+    }
+  | {
+      type: 'system/ping';
+      payload: Record<string, never>;
     };
+
+export type ServerMessage = EnvelopeMeta & ServerMessagePayload;
