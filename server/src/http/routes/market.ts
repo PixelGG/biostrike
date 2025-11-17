@@ -6,9 +6,14 @@ import {
   buyListing,
 } from '../../market/service';
 import { Region } from '../../types';
+import { validateToken } from '../../auth/token';
 
-function getUserId(req: any): string {
-  return (req.headers['x-user-id'] as string) ?? 'demo-user';
+async function getUserId(req: any): Promise<string | null> {
+  const authHeader = req.headers.authorization as string | undefined;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+  if (!token) return null;
+  const claims = await validateToken(token);
+  return claims?.userId ?? null;
 }
 
 function getRegion(_req: any): Region {
@@ -24,8 +29,12 @@ export function createMarketRouter(): Router {
     res.json({ listings });
   });
 
-  router.post('/list', (req, res) => {
-    const userId = getUserId(req);
+  router.post('/list', async (req, res) => {
+    const userId = await getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'ACCESS_TOKEN_REQUIRED' });
+      return;
+    }
     const region = getRegion(req);
     const { itemType, refId, priceBC } = req.body as {
       itemType?: 'floran' | 'item';
@@ -51,8 +60,12 @@ export function createMarketRouter(): Router {
     }
   });
 
-  router.post('/cancel', (req, res) => {
-    const userId = getUserId(req);
+  router.post('/cancel', async (req, res) => {
+    const userId = await getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'ACCESS_TOKEN_REQUIRED' });
+      return;
+    }
     const { listingId } = req.body as { listingId?: string };
 
     if (!listingId) {
@@ -68,8 +81,12 @@ export function createMarketRouter(): Router {
     }
   });
 
-  router.post('/buy', (req, res) => {
-    const userId = getUserId(req);
+  router.post('/buy', async (req, res) => {
+    const userId = await getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'ACCESS_TOKEN_REQUIRED' });
+      return;
+    }
     const { listingId } = req.body as { listingId?: string };
 
     if (!listingId) {
@@ -87,4 +104,3 @@ export function createMarketRouter(): Router {
 
   return router;
 }
-

@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { listShopItems, purchaseShopItem } from '../../shop/service';
+import { validateToken } from '../../auth/token';
 
-// In lieu of real HTTP auth, we accept a userId header for the prototype.
-function getUserId(req: any): string {
-  return (req.headers['x-user-id'] as string) ?? 'demo-user';
+async function getUserId(req: any): Promise<string | null> {
+  const authHeader = req.headers.authorization as string | undefined;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+  if (!token) return null;
+  const claims = await validateToken(token);
+  return claims?.userId ?? null;
 }
 
 export function createShopRouter(): Router {
@@ -14,8 +18,12 @@ export function createShopRouter(): Router {
     res.json({ items });
   });
 
-  router.post('/buy', (req, res) => {
-    const userId = getUserId(req);
+  router.post('/buy', async (req, res) => {
+    const userId = await getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'ACCESS_TOKEN_REQUIRED' });
+      return;
+    }
     const { shopItemId } = req.body as { shopItemId?: string };
 
     if (!shopItemId) {
@@ -37,4 +45,3 @@ export function createShopRouter(): Router {
 
   return router;
 }
-

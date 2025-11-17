@@ -455,6 +455,36 @@ export interface LiveConfig {
   // Future extension: marketFee overrides, weather modifiers, UI flags, etc.
 }
 
+// Auth / Accounts / Sessions
+
+export type UserRole = 'user' | 'mod' | 'admin';
+
+export type UserStatus = 'active' | 'locked' | 'banned' | 'deleted';
+
+export interface UserAccount {
+  id: string;
+  username: string;
+  passwordHash: string;
+  role: UserRole;
+  status: UserStatus;
+  failedLoginAttempts: number;
+  lockedUntil?: number;
+  createdAt: number;
+  lastLoginAt?: number;
+  lastIp?: string;
+  lastUserAgent?: string;
+}
+
+export interface SessionRecord {
+  id: string;
+  userId: string;
+  createdAt: number;
+  lastSeenAt: number;
+  ip?: string;
+  userAgent?: string;
+  revoked?: boolean;
+}
+
 export interface EnvelopeMeta {
   id: string;
   /**

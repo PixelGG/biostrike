@@ -1,4 +1,4 @@
-import { logger } from '../core/logger';
+import { AccessTokenClaims, validateAccessToken } from './service';
 
 export interface AuthClaims {
   userId: string;
@@ -8,8 +8,6 @@ export interface AuthClaims {
 
 /**
  * Validates an access token and returns basic claims.
- * In this prototype, the token wird direkt als userId verwendet.
- * Später kann hier echte JWT-Validierung integriert werden.
  */
 export async function validateToken(token: string): Promise<AuthClaims | null> {
   const trimmed = token?.trim();
@@ -17,10 +15,15 @@ export async function validateToken(token: string): Promise<AuthClaims | null> {
     return null;
   }
 
-  // For now, treat the token string itself as the userId.
-  const userId = trimmed;
-  const sessionId = `sess_${Math.random().toString(36).slice(2, 10)}`;
-  const expiresAt = Date.now() + 60 * 60 * 1000; // 1h TTL prototype
-  logger.debug('Token validated (stub)', { userId, sessionId });
-  return { userId, sessionId, expiresAt };
+  const claims: AccessTokenClaims | null = validateAccessToken(trimmed);
+  if (!claims) {
+    return null;
+  }
+
+  return {
+    userId: claims.sub,
+    sessionId: claims.sid,
+    expiresAt: claims.exp * 1000,
+  };
 }
+
