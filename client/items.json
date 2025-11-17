@@ -1,0 +1,27 @@
+[
+  { "id": "watering_can", "name": "Gießkanne", "iconRef": "Bilder/Items/Gießkanne.png", "effectKey": "water_instant", "params": { "value": 15000, "overflowStack": 0 } },
+  { "id": "watering_wand", "name": "Gießstab", "iconRef": "Bilder/Items/Gießstab.png", "effectKey": "water_precise", "params": { "value": 15000 } },
+  { "id": "compost_tea", "name": "Komposttee-Kanne", "iconRef": "Bilder/Items/Komposttee-Kanne.png", "effectKey": "heal_and_water", "params": { "hpPct": 50, "water": 10000, "nextInitPenalty": 50 } },
+  { "id": "fungicide", "name": "Pilzhemm-Serum", "iconRef": "Bilder/Items/Pilzhemm-Serum.png", "effectKey": "rootrot_progress_reduce", "params": { "value": 300, "duration": 2, "rainPenalty": 100 } },
+  { "id": "fertilizer_pellets", "name": "Dünger-Pellets", "iconRef": "Bilder/Items/Dünger-Pellets.png", "effectKey": "phys_boost", "params": { "damageBoost": 150, "sizeBoost": 100, "windVuln": 50 } },
+  { "id": "mulch", "name": "Mulch-Sack", "iconRef": "Bilder/Items/Mulch-Sack.png", "effectKey": "transp_reduce", "params": { "value": 200, "duration": 3, "initPenalty": 50 } },
+  { "id": "leaf_wax", "name": "Blattwachs", "iconRef": "Bilder/Items/Blattwachs.png", "effectKey": "transp_reduce", "params": { "value": 100, "duration": 2 } },
+  { "id": "drainage_gravel", "name": "Drainage-Kies", "iconRef": "Bilder/Items/Drainage-Kies.png", "effectKey": "rootrot_progress_reduce", "params": { "value": 200, "duration": 2, "rainPenalty": 100 } },
+  { "id": "hydrogel_beads", "name": "Hydrogel-Perlen", "iconRef": "Bilder/Items/Hydrogel-Perlen.png", "effectKey": "reserve_water", "params": { "value": 5000, "triggerBelowPct": 200, "overflowStack": 100 } },
+  { "id": "plant_protect_spray", "name": "Pflanzenschutz-Spray", "iconRef": "Bilder/Items/Pflanzenschutz-Spray.png", "effectKey": "cleanse", "params": { "stacks": 1, "immuneSpores": 1 } },
+  { "id": "trellis", "name": "Rankhilfe", "iconRef": "Bilder/Items/Rankhilfe.png", "effectKey": "phys_boost", "params": { "damageBoost": 100, "sizeBoost": 80 } },
+  { "id": "tie", "name": "Rankband", "iconRef": "Bilder/Items/Rankband.png", "effectKey": "leaf_loss_reduce", "params": { "value": 600, "duration": 2 } },
+  { "id": "salt_filter", "name": "Salzfilter", "iconRef": "Bilder/Items/Salzfilter.png", "effectKey": "salt_neutralize", "params": { "duration": 3, "rainPenalty": 100 } },
+  { "id": "shade_cloth", "name": "Schattentuch", "iconRef": "Bilder/Items/Schattentuch.png", "effectKey": "no_sunburn", "params": { "duration": 2, "psPenalty": 50 } },
+  { "id": "heat_lamp", "name": "Wärmelampe", "iconRef": "Bilder/Items/Wärmelampe.png", "effectKey": "cold_nullify_ps_boost", "params": { "psBoost": 100, "transpBoost": 100, "duration": 2 } },
+  { "id": "windbreak_hedge", "name": "Windschutz-Hecke", "iconRef": "Bilder/Items/Windschutz-Hecke.png", "effectKey": "leaf_loss_reduce", "params": { "value": 600, "duration": 2 } },
+  { "id": "soil_tester", "name": "Boden-Tester", "iconRef": "Bilder/Items/Boden-Tester.png", "effectKey": "vision_weather", "params": { "choices": 2, "nextInitPenalty": 50 } },
+  { "id": "moisture_meter", "name": "Feuchtemesser", "iconRef": "Bilder/Items/Feuchtemesser.png", "effectKey": "vision_water", "params": { "value": 5000 } },
+  { "id": "seed_pouch", "name": "Samenbeutel", "iconRef": "Bilder/Items/Samenbeutel.png", "effectKey": "summon_seedling", "params": { "duration": 1 } },
+  { "id": "pot_xl", "name": "Topf XL", "iconRef": "Bilder/Items/Topf XL.png", "effectKey": "cap_increase", "params": { "value": 10000, "initPenalty": 50 } },
+  { "id": "bannkern_1", "name": "Bannkern I", "iconRef": "Bilder/bannkerne/Bannkern-1.png", "effectKey": "catch_attempt", "params": { "chancePct": 5 } },
+  { "id": "bannkern_2", "name": "Bannkern II", "iconRef": "Bilder/bannkerne/Bannkern-2.png", "effectKey": "catch_attempt", "params": { "chancePct": 10 } },
+  { "id": "bannkern_3", "name": "Bannkern III", "iconRef": "Bilder/bannkerne/Bannkern-3.png", "effectKey": "catch_attempt", "params": { "chancePct": 15 } },
+  { "id": "bannkern_4", "name": "Bannkern IV – Relikt", "iconRef": "Bilder/bannkerne/Bannkern-4.png", "effectKey": "catch_attempt", "params": { "chancePct": 25, "dropOnly": true } }
+]
+

@@ -1,0 +1,53 @@
+#	Pflanze	Typ (Rolle)	Signatur‑Fähigkeit (Kurz)           
+	Sonnenblume	                    Temperiert/Offensiv	                     Blattspreizung:         +Oberfläche/+PS‑Output, Sonnenbrand‑Risiko     
+	Kaktus      (Saguaro)	        üste/Tank	                             Saftspeicher:           Transpiration stark verringern                 
+	Aloe	                        Wüste/Heiler	                         Gel‑Heilung:            heilt %‑HP, −Sonnenbrand                       
+	Venusfliegenfalle	            Sumpf/Control	                         Schnappfalle:           Stun bei Kontakt                               
+	Sonnentau	                    Sumpf/DoT	                             Klebtröpfchen:          Verlangsamt, Sporen‑DoT                        
+	Bambus	                        Temperiert/Schnell	                     Spross‑Schub:           Initiative‑Burst                               
+	Seerose	                        Aquatisch/Tank	                         Schwimmblätter:         immun gg. Ertrinken 1×                         
+	Lotus	                        Aquatisch/Support	                     Reinigung:              entfernt Debuffs                               
+	Eiche       (Sämling)	        Temperiert/Tank	                         Tiefwurzel:             −Transpiration, +Bodenbindung                  
+	Ahorn       (Sämling)	        Temperiert/Hybrid	                     Zuckerstoß:             kurzzeitiger Offensiv‑Buff                     
+	Birke       (Sämling)	        Temperiert/Speed	                     Leichtblatt:            resistent gg. Blattverlust                     
+	Weide       (Sämling)	        Aquatisch/Support	                     Hängetriebe:            −Gegn. Initiative                              
+	Lavendel	                    Sonne/Anti‑Debuff	                     Duftwolke:              −Parasiten/Sporen                              
+	Rosmarin	                    Sonne/Anti‑Sporen	                     Öle:                    reduziert DoTs, entflammbar (Risiko)           
+	Rose	                        Temperiert/Reflex	                     Dornenkranz:            Rückschaden bei Kontakt                        
+	Brennnessel	                    Temperiert/DoT	                         Nesselgift:             Kontakt‑DoT                                    
+	Kürbis	                        Temperiert/Schilde	                     Schale:                 temporärer HP‑Schild                           
+	Tomate	                        Temperiert/Burst	                     Fruchtwurf:             hoher einmaliger Schaden                       
+	Chili	                        Sonne/Burn	                             Capsaicin:              Hitze‑Burn verstärken                          
+	Pfefferminze	                Schatten/Control	                     Kühlduft:               −Heiß‑Effekte                                  
+	Moos	                        Schatten/Regeneration	                 Wasserfilm:             +Regeneration bei Feuchte                      
+	Farn	                        Schatten/Spore	                         Sporenfächer:           AoE‑Debuff (künftig 3v3)                       
+	Orchidee	                    Tropisch/Glaskanone	                     Epiphyt:                ignoriert einige Bodeneffekte                  
+	Echeveria	                    Wüste/Speicher	                         Rosette:                +Kapazität, −Initiative                        
+	Agave	                        Wüste/Counter	                         Faserdorn:              Kontakt‑Verwundbarkeit                         
+	Yucca	                        Wüste/Windfest	                         Steifblatt:             −Blattverlust stark                            
+	Mangrove    (Sämling)	        Küste/Aquatisch	                         Salzfilter:             Salz‑Debuffs neutralisieren                    
+	Dattelpalme (Sämling)	        Wüste/Wind	                             Wedelspiel:             Wind als Buff statt Debuff                     
+	Raps	                        Temperiert/Burst‑Wachstum	             Blütenflut:             kurzer PS‑Peak                                 
+	Klee	                        Temperiert/Krit	                         Glücksklee:             Krit‑Chance ↑                                  
+	Sonnenhut   (Echinacea)	        Temperiert/Immun	                     Immunstimulanz:         −Debuff‑Dauer                                  
+	Kamille	                        Temperiert/Heiler	                     Beruhigen:              heilt & entfernt Burn                          
+	Basilikum	                    Temperiert/Tempo	                     Aroma‑Push:             Team‑Initiative ↑                              
+	Kartoffel	                    Temperiert/Standhaft	                 Knolle:                 −Schaden, −Speed                               
+	Reis	                        Aquatisch/Skalierer	                     Überschwemmungsdrang:   profitiert stark bei Regen                     
+	Mais	                        Temperiert/Glaskanone                    Hochwuchs:              +Offensiv, windanfällig                        
+	Weizen	                        Temperiert/Rush	                         Ährensturm:             schneller Druck, zerfällt                      
+	Opuntia     (Kaktusfeige)	    Wüste/Reflex	                         Glochiden:              mehrfacher Rückschaden                         
+	Beifuß      (Sagebrush)	        Wüste/Wind	                             Schutzbusch:            −Gegn. Projektiltreffer                        
+	Eukalyptus  (Sämling)	        Sonne/Burn‑Synergie	                     Ölduft:                 verstärkt Hitze‑Burn‑Stacks                    
+	Ginkgo      (Sämling)	        Alpin/Resistenz	                         Uralt‑Erbe:             −Statuswahrsch.                                X
+[
+  {"id":"sunflower","name":"Sonnenblume","role":"offense","type":"temperate","baseStats":{"hp":850,"cap":100,"area":110,"init":1.10,"off":105,"def":70},"resists":{"heat":30,"cold":40,"wind":30,"dry":25,"wet":20,"salt":10},"signatures":["Blattspreizung"]},
+  {"id":"cactus","name":"Kaktus","role":"tank","type":"desert","baseStats":{"hp":1100,"cap":140,"area":80,"init":0.85,"off":80,"def":105},"resists":{"heat":85,"cold":25,"wind":55,"dry":80,"wet":10,"salt":20},"signatures":["Saftspeicher"]},
+  {"id":"aloe","name":"Aloe","role":"support","type":"desert","baseStats":{"hp":900,"cap":120,"area":85,"init":0.95,"off":70,"def":95},"resists":{"heat":70,"cold":30,"wind":40,"dry":65,"wet":20,"salt":20},"signatures":["Gel-Heilung"]},
+  {"id":"venus","name":"Venusfliegenfalle","role":"control","type":"aqua","baseStats":{"hp":800,"cap":100,"area":95,"init":1.00,"off":90,"def":85},"resists":{"heat":25,"cold":35,"wind":30,"dry":20,"wet":70,"salt":10},"signatures":["Schnappfalle"]},
+  {"id":"sundew","name":"Sonnentau","role":"dot","type":"aqua","baseStats":{"hp":780,"cap":100,"area":105,"init":1.00,"off":95,"def":80},"resists":{"heat":25,"cold":35,"wind":30,"dry":20,"wet":75,"salt":10},"signatures":["Klebtröpfchen"]},
+  {"id":"bamboo","name":"Bambus","role":"speed","type":"temperate","baseStats":{"hp":820,"cap":95,"area":100,"init":1.20,"off":90,"def":80},"resists":{"heat":30,"cold":35,"wind":35,"dry":25,"wet":30,"salt":10},"signatures":["Spross-Schub"]},
+  {"id":"lotus","name":"Seerose","role":"tank","type":"aqua","baseStats":{"hp":1000,"cap":130,"area":90,"init":0.90,"off":75,"def":105},"resists":{"heat":20,"cold":40,"wind":30,"dry":15,"wet":85,"salt":25},"signatures":["Schwimmblätter"]},
+  {"id":"nettle","name":"Brennnessel","role":"dot","type":"temperate","baseStats":{"hp":800,"cap":90,"area":100,"init":1.05,"off":100,"def":75},"resists":{"heat":35,"cold":35,"wind":35,"dry":25,"wet":25,"salt":10},"signatures":["Nesselgift"]},
+  {"id":"tomato","name":"Tomate","role":"burst","type":"temperate","baseStats":{"hp":820,"cap":100,"area":100,"init":1.05,"off":110,"def":70},"resists":{"heat":30,"cold":35,"wind":30,"dry":20,"wet":25,"salt":10},"signatures":["Fruchtwurf"]}
+]
