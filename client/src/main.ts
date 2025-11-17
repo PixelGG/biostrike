@@ -68,6 +68,8 @@ type ServerEnvelopeMeta = {
   ts?: string;
 };
 
+type ChatModerationState = 'VISIBLE' | 'SOFT_HIDDEN' | 'HARD_HIDDEN' | 'PENDING_REVIEW';
+
 type ServerMessagePayload =
   | { type: 'auth/ok'; payload: { userId: string; sessionId: string } }
   | { type: 'auth/error'; payload: { code: string; message: string } }
@@ -75,7 +77,28 @@ type ServerMessagePayload =
   | { type: 'match/found'; payload: { matchId: string; mode: MatchMode; opponent?: { userId: string } } }
   | { type: 'match/state'; payload: { matchId: string; state: MatchView } }
   | { type: 'match/result'; payload: { matchId: string; state: MatchView } }
-  | { type: 'chat/message'; payload: { channel: string; userId: string; message: string; at: string } }
+  | {
+      type: 'chat/message';
+      payload: {
+        channel: string;
+        userId: string;
+        message: string;
+        at: string;
+        messageId: string;
+        moderationState: ChatModerationState;
+        flags?: string[];
+      };
+    }
+  | { type: 'chat/system'; payload: { channel: string; message: string } }
+  | {
+      type: 'chat/messageUpdate';
+      payload: {
+        messageId: string;
+        channel: string;
+        moderationState: ChatModerationState;
+        flags?: string[];
+      };
+    }
   | { type: 'system/ping'; payload: Record<string, never> }
   | { type: 'error'; payload: { code: string; message: string } };
 
@@ -93,12 +116,25 @@ type ClientEnvelopeMeta = {
   ts?: string;
 };
 
+type ModerationReasonCategory =
+  | 'TOXIC'
+  | 'HATE'
+  | 'THREAT'
+  | 'SPAM'
+  | 'SEXUAL'
+  | 'EXTREMISM'
+  | 'OTHER';
+
 type ClientMessagePayload =
   | { type: 'auth/hello'; payload: { token: string; sessionId?: string } }
   | { type: 'match/queue'; payload: { mode: MatchMode; speciesId?: string; difficulty?: AIDifficulty } }
   | { type: 'match/cancelQueue'; payload: { mode: MatchMode } }
   | { type: 'match/command'; payload: { matchId: string; command: ClientCommand } }
   | { type: 'chat/send'; payload: { channel: string; message: string } }
+  | { type: 'chat/join'; payload: { channel: string } }
+  | { type: 'chat/leave'; payload: { channel: string } }
+  | { type: 'chat/block'; payload: { targetUserId: string } }
+  | { type: 'chat/report'; payload: { messageId: string; category: ModerationReasonCategory; comment?: string } }
   | { type: 'system/pong'; payload: Record<string, never> };
 
 type ClientMessage = ClientEnvelopeMeta & ClientMessagePayload;

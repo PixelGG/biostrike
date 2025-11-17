@@ -366,6 +366,99 @@ export interface MarketTransaction {
   at: number;
 }
 
+// Chat / Social / Moderation domain types
+
+export type ChatChannelType = 'LOBBY' | 'BIOME' | 'MATCH' | 'PARTY' | 'PM';
+
+export type ChatChannelVisibility = 'PUBLIC' | 'PRIVATE' | 'RESTRICTED';
+
+export interface ChatChannelRules {
+  /**
+   * Optional per-channel soft rate limit for messages (messages per second).
+   * The global WS rate limit still applies independently.
+   */
+  maxMessagesPerSecond?: number;
+  /**
+   * Whether links are allowed in this channel.
+   */
+  allowLinks?: boolean;
+  /**
+   * Optional minimum player level to post links in this channel.
+   * (Progression subsystem can enforce this later when integrated.)
+   */
+  minPlayerLevelForLinks?: number;
+}
+
+export interface ChatChannel {
+  id: string;
+  type: ChatChannelType;
+  visibility: ChatChannelVisibility;
+  /**
+   * For private channels (MATCH, PARTY, PM) the set of participants.
+   * For public channels this can be omitted; membership is inferred
+   * from join events.
+   */
+  participantUserIds?: string[];
+  rules?: ChatChannelRules;
+}
+
+export type ChatMessageModerationState =
+  | 'VISIBLE'
+  | 'SOFT_HIDDEN'
+  | 'HARD_HIDDEN'
+  | 'PENDING_REVIEW';
+
+export type ChatMessageFlag =
+  | 'PROFANITY'
+  | 'SPAM'
+  | 'TOXIC'
+  | 'HARASSMENT'
+  | 'HATE'
+  | 'NSFW'
+  | 'EXTREMISM'
+  | 'OTHER';
+
+export interface ChatMessage {
+  id: string;
+  channelId: string;
+  senderUserId: string;
+  content: string;
+  createdAt: number;
+  normalizedContent: string;
+  toxicityScore?: number;
+  flags: ChatMessageFlag[];
+  moderationState: ChatMessageModerationState;
+}
+
+export interface SocialGraph {
+  userId: string;
+  friends: string[];
+  blocks: string[];
+}
+
+export type ModerationReasonCategory =
+  | 'TOXIC'
+  | 'HATE'
+  | 'THREAT'
+  | 'SPAM'
+  | 'SEXUAL'
+  | 'EXTREMISM'
+  | 'OTHER';
+
+export type ModerationCaseStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED';
+
+export interface ModerationCase {
+  id: string;
+  reportedUserId: string;
+  reportedMessageIds: string[];
+  reportedByUserIds: string[];
+  reasonCategories: ModerationReasonCategory[];
+  status: ModerationCaseStatus;
+  createdAt: number;
+  resolvedAt?: number;
+  actionsTaken?: string;
+}
+
 // LiveOps / Events / Quests / LiveConfig
 
 export type EventType =
@@ -536,6 +629,32 @@ export type ClientMessagePayload =
       };
     }
   | {
+      type: 'chat/join';
+      payload: {
+        channel: string;
+      };
+    }
+  | {
+      type: 'chat/leave';
+      payload: {
+        channel: string;
+      };
+    }
+  | {
+      type: 'chat/block';
+      payload: {
+        targetUserId: string;
+      };
+    }
+  | {
+      type: 'chat/report';
+      payload: {
+        messageId: string;
+        category: ModerationReasonCategory;
+        comment?: string;
+      };
+    }
+  | {
       type: 'system/pong';
       payload: Record<string, never>;
     };
@@ -584,6 +703,25 @@ export type ServerMessagePayload =
         userId: string;
         message: string;
         at: string;
+        messageId: string;
+        moderationState: ChatMessageModerationState;
+        flags?: ChatMessageFlag[];
+      };
+    }
+  | {
+      type: 'chat/system';
+      payload: {
+        channel: string;
+        message: string;
+      };
+    }
+  | {
+      type: 'chat/messageUpdate';
+      payload: {
+        messageId: string;
+        channel: string;
+        moderationState: ChatMessageModerationState;
+        flags?: ChatMessageFlag[];
       };
     }
   | {

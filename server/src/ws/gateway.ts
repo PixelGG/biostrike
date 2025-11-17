@@ -16,6 +16,20 @@ import {
   ServerMessage,
   ServerMessagePayload,
 } from '../types';
+import {
+  ensureMatchChannel,
+  getChannelById,
+  getChannelMembers,
+  getMessageById as getChatMessageById,
+  flagMessageForModeration,
+  LOBBY_GLOBAL_CHANNEL_ID,
+  sendChatMessage,
+  joinChannel as chatJoinChannel,
+  leaveChannel as chatLeaveChannel,
+} from '../chat/service';
+import { blockUser, hasBlocked } from '../social/service';
+import { createModerationCase } from '../moderation/service';
+import { getAccountById } from '../auth/service';
 import { Match } from '../match';
 import { createFloranInstance } from '../data/florans';
 import { chooseBotCommand } from '../ai';
@@ -53,6 +67,7 @@ interface MatchRecord {
   players: string[];
   difficulty: AIDifficulty;
   createdAt: number;
+  chatChannelId?: string;
 }
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -169,14 +184,18 @@ function onTicketFromMatchmaking(ticket: MatchTicket): void {
   const playerA = createFloranInstance('sunflower');
   const playerB = createFloranInstance('cactus');
 
+  const participantUserIds = [a.userId, b.userId];
+  const chatChannelId = ensureMatchChannel(matchId, participantUserIds);
+
   const match = new Match(playerA, playerB, { id: matchId, mode, arenaId: region });
   const record: MatchRecord = {
     id: matchId,
     mode,
     match,
-    players: [a.userId, b.userId],
+    players: participantUserIds,
     difficulty: 'easy',
     createdAt: Date.now(),
+    chatChannelId,
   };
 
   matches.set(matchId, record);
@@ -228,11 +247,31 @@ function handleAuthHello(
         return;
       }
 
+      const account = getAccountById(claims.userId);
+      if (account && (account.status === 'banned' || account.status === 'deleted')) {
+        sendMessage(socket, ctx, {
+          type: 'auth/error',
+          payload: { code: 'account_not_allowed', message: 'Account is not allowed to connect.' },
+        });
+        ctx.state = 'CLOSING';
+        socket.close();
+        return;
+      }
+
       ctx.userId = claims.userId;
       ctx.authenticated = true;
       ctx.state = 'READY';
       ctx.sessionId = claims.sessionId;
       registerSocketForUser(claims.userId, socket);
+      // Auto-join global lobby chat for convenience.
+      try {
+        chatJoinChannel(claims.userId, LOBBY_GLOBAL_CHANNEL_ID);
+      } catch (err) {
+        logger.warn('Failed to auto-join lobby channel', {
+          userId: claims.userId,
+          error: String(err),
+        });
+      }
 
       logger.info('WS authenticated', { userId: claims.userId });
       sendMessage(socket, ctx, {
@@ -267,23 +306,26 @@ function handleMatchQueue(
   const effectiveMode: MatchMode = mode ?? 'PVE_BOT';
 
   if (effectiveMode === 'PVE_BOT') {
-    const playerSpeciesId = speciesId ?? 'sunflower';
-    const botSpeciesId = 'cactus';
-    const diff: AIDifficulty = difficulty ?? 'easy';
+      const playerSpeciesId = speciesId ?? 'sunflower';
+      const botSpeciesId = 'cactus';
+      const diff: AIDifficulty = difficulty ?? 'easy';
 
-    const player = createFloranInstance(playerSpeciesId);
-    const enemy = createFloranInstance(botSpeciesId);
-    const match = new Match(player, enemy);
-    const matchId = createMatchId();
+      const player = createFloranInstance(playerSpeciesId);
+      const enemy = createFloranInstance(botSpeciesId);
+      const match = new Match(player, enemy);
+      const matchId = createMatchId();
+      const participants = [ctx.userId];
+      const chatChannelId = ensureMatchChannel(matchId, participants);
 
-    const record: MatchRecord = {
-      id: matchId,
-      mode: 'PVE_BOT',
-      match,
-      players: [ctx.userId],
-      difficulty: diff,
-      createdAt: Date.now(),
-    };
+      const record: MatchRecord = {
+        id: matchId,
+        mode: 'PVE_BOT',
+        match,
+        players: participants,
+        difficulty: diff,
+        createdAt: Date.now(),
+        chatChannelId,
+      };
 
     matches.set(matchId, record);
     ctx.matchId = matchId;
@@ -489,23 +531,209 @@ export function attachWebSocketGateway(server: http.Server): void {
           handleMatchCommand(socket, context, msg);
           break;
         case 'chat/send':
-          // Basic echo-style chat for now.
-          if (!context.userId) {
+          if (!context.authenticated || !context.userId || context.state !== 'READY') {
             sendMessage(socket, context, {
               type: 'error',
               payload: { code: 'unauthenticated', message: 'Authenticate first via auth/hello.' },
             });
             return;
           }
+          try {
+            const channelId = msg.payload.channel;
+            const account = getAccountById(context.userId);
+            if (account && (account.status === 'banned' || account.status === 'deleted')) {
+              sendMessage(socket, context, {
+                type: 'error',
+                payload: {
+                  code: 'chat_forbidden',
+                  message: 'Chat is not available for this account.',
+                },
+              });
+              return;
+            }
+
+            const channel = getChannelById(channelId);
+            if (!channel) {
+              sendMessage(socket, context, {
+                type: 'error',
+                payload: { code: 'chat_channel_not_found', message: 'Chat channel not found.' },
+              });
+              return;
+            }
+
+            const { message, deliverToChannelMembers } = sendChatMessage({
+              channelId,
+              senderUserId: context.userId,
+              content: msg.payload.message,
+            });
+
+            const payload: ServerMessagePayload = {
+              type: 'chat/message',
+              payload: {
+                channel: channelId,
+                userId: context.userId,
+                message: message.content,
+                at: new Date(message.createdAt).toISOString(),
+                messageId: message.id,
+                moderationState: message.moderationState,
+                flags: message.flags.length > 0 ? message.flags : undefined,
+              },
+            };
+
+            const recipients = deliverToChannelMembers
+              ? getChannelMembers(channelId)
+              : new Set<string>([context.userId]);
+
+            for (const userId of recipients) {
+              const socketsForUser = userSockets.get(userId);
+              if (!socketsForUser || socketsForUser.size === 0) continue;
+              // Respect block lists: if the receiving user has blocked the sender,
+              // do not deliver the message to that user.
+              if (hasBlocked(userId, context.userId)) {
+                continue;
+              }
+              for (const s of socketsForUser) {
+                const receiverCtx = contexts.get(s);
+                sendMessage(s, receiverCtx, payload);
+              }
+            }
+          } catch (err) {
+            const msgText = String(err);
+            let code = 'chat_error';
+            if (msgText.includes('CHAT_CHANNEL_NOT_FOUND')) {
+              code = 'chat_channel_not_found';
+            } else if (msgText.includes('CHAT_NOT_IN_CHANNEL')) {
+              code = 'chat_not_in_channel';
+            } else if (msgText.includes('CHAT_MESSAGE_EMPTY')) {
+              code = 'chat_message_empty';
+            } else if (msgText.includes('CHAT_MESSAGE_TOO_LONG')) {
+              code = 'chat_message_too_long';
+            }
+
+            sendMessage(socket, context, {
+              type: 'error',
+              payload: {
+                code,
+                message: 'Chat-Nachricht konnte nicht gesendet werden.',
+              },
+            });
+          }
+          break;
+        case 'chat/join':
+          if (!context.authenticated || !context.userId || context.state !== 'READY') {
+            sendMessage(socket, context, {
+              type: 'error',
+              payload: { code: 'unauthenticated', message: 'Authenticate first via auth/hello.' },
+            });
+            return;
+          }
+          try {
+            const channelId = msg.payload.channel;
+            const channel = chatJoinChannel(context.userId, channelId);
+            logger.info('WS chat/join processed', { userId: context.userId, channelId });
+            // Optionally send a small system message back to the joining user.
+            sendMessage(socket, context, {
+              type: 'chat/system',
+              payload: {
+                channel: channel.id,
+                message: `Du bist dem Channel ${channel.id} beigetreten.`,
+              },
+            });
+          } catch (err) {
+            sendMessage(socket, context, {
+              type: 'error',
+              payload: {
+                code: 'chat_join_failed',
+                message: 'Channel-Beitritt fehlgeschlagen.',
+              },
+            });
+          }
+          break;
+        case 'chat/leave':
+          if (!context.authenticated || !context.userId || context.state !== 'READY') {
+            sendMessage(socket, context, {
+              type: 'error',
+              payload: { code: 'unauthenticated', message: 'Authenticate first via auth/hello.' },
+            });
+            return;
+          }
+          try {
+            const channelId = msg.payload.channel;
+            chatLeaveChannel(context.userId, channelId);
+            logger.info('WS chat/leave processed', { userId: context.userId, channelId });
+          } catch (err) {
+            sendMessage(socket, context, {
+              type: 'error',
+              payload: {
+                code: 'chat_leave_failed',
+                message: 'Channel-Verlassen fehlgeschlagen.',
+              },
+            });
+          }
+          break;
+        case 'chat/block':
+          if (!context.authenticated || !context.userId || context.state !== 'READY') {
+            sendMessage(socket, context, {
+              type: 'error',
+              payload: { code: 'unauthenticated', message: 'Authenticate first via auth/hello.' },
+            });
+            return;
+          }
+          blockUser(context.userId, msg.payload.targetUserId);
           sendMessage(socket, context, {
-            type: 'chat/message',
+            type: 'chat/system',
             payload: {
-              channel: msg.payload.channel,
-              userId: context.userId,
-              message: msg.payload.message,
-              at: new Date().toISOString(),
+              channel: 'system',
+              message: `User ${msg.payload.targetUserId} wurde blockiert.`,
             },
           });
+          break;
+        case 'chat/report':
+          if (!context.authenticated || !context.userId || context.state !== 'READY') {
+            sendMessage(socket, context, {
+              type: 'error',
+              payload: { code: 'unauthenticated', message: 'Authenticate first via auth/hello.' },
+            });
+            return;
+          }
+          try {
+            const chatMsg = getChatMessageById(msg.payload.messageId);
+            if (!chatMsg) {
+              sendMessage(socket, context, {
+                type: 'error',
+                payload: {
+                  code: 'chat_message_not_found',
+                  message: 'Gemeldete Nachricht nicht gefunden.',
+                },
+              });
+              return;
+            }
+
+            flagMessageForModeration(chatMsg.id, [], 'PENDING_REVIEW');
+
+            createModerationCase({
+              reportedUserId: chatMsg.senderUserId,
+              reportedMessageIds: [chatMsg.id],
+              reportedByUserId: context.userId,
+              reasonCategories: [msg.payload.category],
+            });
+
+            sendMessage(socket, context, {
+              type: 'chat/system',
+              payload: {
+                channel: chatMsg.channelId,
+                message: 'Danke, deine Meldung wurde aufgenommen.',
+              },
+            });
+          } catch (err) {
+            sendMessage(socket, context, {
+              type: 'error',
+              payload: {
+                code: 'chat_report_failed',
+                message: 'Meldung konnte nicht verarbeitet werden.',
+              },
+            });
+          }
           break;
         case 'system/pong':
           // Heartbeat response, nothing else to do.
