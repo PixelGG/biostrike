@@ -1,27 +1,147 @@
-name: CI
+name: CI / CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
+  workflow_dispatch:   # optional: für manuelles Deployment
 
 jobs:
+  # 1) Commit-Meldung (optional – nur wenn du getrennte Commit-Infos willst)
+  notify-commit:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Notify Discord about commit
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_COMMITS_WEBHOOK_URL }}
+        run: |
+          COMMIT_URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          payload=$(cat <<EOF
+          {
+            "content": ":pencil2: Neuer Commit in **${GITHUB_REPOSITORY}** auf Branch **${GITHUB_REF_NAME}** von **${GITHUB_ACTOR}**\n${COMMIT_URL}"
+          }
+          EOF
+          )
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK_URL"
+
+  # 2) dein unveränderter Build-Job
   build:
     runs-on: ubuntu-latest
+    # läuft bei push + PR
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+
     steps:
       - uses: actions/checkout@v3
+
       - uses: actions/setup-node@v3
         with:
           node-version: 18
+
       - name: Install dependencies
         run: |
           cd server && npm install
           cd ../client && npm install
+
       - name: Type check server
         run: |
           cd server && npx tsc --noEmit
+
       - name: Type check client
         run: |
           cd client && npx tsc --noEmit
       # Unit tests können in Zukunft ergänzt werden
+
+      # Discord: Build erfolgreich
+      - name: Notify Discord on build success
+        if: ${{ success() }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_BUILDS_WEBHOOK_URL }}
+        run: |
+          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(cat <<EOF
+          {
+            "content": ":white_check_mark: Build erfolgreich für **${GITHUB_REPOSITORY}** auf Branch **${GITHUB_REF_NAME}**\nDetails: ${RUN_URL}"
+          }
+          EOF
+          )
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK_URL"
+
+      # Discord: Build fehlgeschlagen
+      - name: Notify Discord on build failure
+        if: ${{ failure() }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_BUILDS_WEBHOOK_URL }}
+        run: |
+          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(cat <<EOF
+          {
+            "content": ":x: Build **fehlgeschlagen** für **${GITHUB_REPOSITORY}** auf Branch **${GITHUB_REF_NAME}**\nDetails: ${RUN_URL}"
+          }
+          EOF
+          )
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK_URL"
+
+  # 3) Deployment (nur bei workflow_dispatch, also manuell)
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build / Vorbereitung fürs Deployment
+        run: |
+          echo "Hier später z.B.:"
+          echo "cd client && npm install && npm run build"
+
+      - name: Deployment ausführen
+        run: |
+          echo "TODO: Dein echtes Deployment-Kommando eintragen (ssh, docker, etc.)"
+
+      - name: Notify Discord on deployment success
+        if: ${{ success() }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOYS_WEBHOOK_URL }}
+        run: |
+          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(cat <<EOF
+          {
+            "content": ":rocket: Deployment erfolgreich für **${GITHUB_REPOSITORY}** (Run: ${RUN_URL})"
+          }
+          EOF
+          )
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK_URL"
+
+      - name: Notify Discord on deployment failure
+        if: ${{ failure() }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOYS_WEBHOOK_URL }}
+        run: |
+          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(cat <<EOF
+          {
+            "content": ":warning: Deployment **fehlgeschlagen** für **${GITHUB_REPOSITORY}** (Run: ${RUN_URL})"
+          }
+          EOF
+          )
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK_URL"
