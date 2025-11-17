@@ -6,6 +6,7 @@ export const sampleFlorans: Floran[] = [
     name: 'Sprout',
     stats: {
       hp: 100,
+      maxHp: 100,
       capacity: 50,
       currentWater: 50,
       surface: 1.0,
@@ -30,6 +31,7 @@ export const sampleFlorans: Floran[] = [
     name: 'Thorn',
     stats: {
       hp: 120,
+      maxHp: 120,
       capacity: 60,
       currentWater: 60,
       surface: 1.2,

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>BioStrike Prototype</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #050810;
+        color: #f5f7ff;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      header {
+        padding: 0.75rem 1rem;
+        background: #080c18;
+        border-bottom: 1px solid #151a2b;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 1rem;
+        padding: 1rem;
+        flex: 1;
+        box-sizing: border-box;
+      }
+      .card {
+        background: #0a0f1f;
+        border-radius: 8px;
+        border: 1px solid #151a2b;
+        padding: 0.75rem 1rem;
+        box-sizing: border-box;
+      }
+      .controls button {
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+        padding: 0.4rem 0.9rem;
+        border-radius: 999px;
+        border: none;
+        background: #1f7aff;
+        color: #fff;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      .controls button[disabled] {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .floran-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+      }
+      .bar {
+        position: relative;
+        height: 10px;
+        border-radius: 999px;
+        background: #1a2033;
+        overflow: hidden;
+        margin-top: 0.25rem;
+      }
+      .bar-fill-hp {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, #26d782, #62ffc4);
+      }
+      .bar-fill-water {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, #3fa9ff, #72d3ff);
+      }
+      .log {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+          'Courier New', monospace;
+        font-size: 0.8rem;
+        max-height: calc(100vh - 160px);
+        overflow-y: auto;
+        white-space: pre-line;
+      }
+      .pill {
+        display: inline-block;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        background: #111728;
+        margin-right: 0.35rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>BioStrike · Vertical Slice Prototype</strong>
+    </header>
+    <main>
+      <section class="card">
+        <div class="controls">
+          <button id="btn-connect">Verbinden</button>
+          <button id="btn-start" disabled>Match starten</button>
+          <button id="btn-attack" disabled>Angriff (ATTACK)</button>
+        </div>
+        <div id="status"></div>
+        <div id="battle"></div>
+      </section>
+      <section class="card">
+        <div class="log" id="log"></div>
+      </section>
+    </main>
+    <script type="module" src="./dist/main.js"></script>
+  </body>
+</html>
+

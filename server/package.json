@@ -13,8 +13,10 @@
     "ws": "^8.15.0"
   },
   "devDependencies": {
-    "typescript": "^5.3.3",
+    "@types/express": "^5.0.5",
+    "@types/ws": "^8.18.1",
+    "nodemon": "^3.0.0",
     "ts-node": "^10.9.1",
-    "nodemon": "^3.0.0"
+    "typescript": "^5.3.3"
   }
 }

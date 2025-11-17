@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start": "ts-node src/main.ts"
+    "build": "tsc",
+    "dev": "tsc -w"
   },
   "devDependencies": {
-    "typescript": "^5.3.3",
-    "ts-node": "^10.9.1"
+    "typescript": "^5.3.3"
   },
   "dependencies": {}
 }

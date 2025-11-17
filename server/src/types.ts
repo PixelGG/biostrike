@@ -1,4 +1,4 @@
-// Type definitions and enums for BioStrike server
+// Core shared types for BioStrike server-side simulation
 
 export enum MatchPhase {
   StartOfRound = 'StartOfRound',
@@ -23,6 +23,28 @@ export enum StatusType {
   BuffInitiative = 'BuffInitiative',
 }
 
+export enum WeatherType {
+  HotDry = 'HotDry',
+  CoolDry = 'CoolDry',
+  LightRain = 'LightRain',
+  HeavyRain = 'HeavyRain',
+  Windy = 'Windy',
+  Cloudy = 'Cloudy',
+}
+
+export enum CommandType {
+  Attack = 'ATTACK',
+  Skill = 'SKILL',
+  Item = 'ITEM',
+  Switch = 'SWITCH',
+}
+
+export enum KOReason {
+  Hp = 'HP',
+  Dehydration = 'DEHYDRATION',
+  RootRot = 'ROOT_ROT',
+}
+
 export interface Resistances {
   heat: number;
   cold: number;
@@ -33,13 +55,41 @@ export interface Resistances {
 }
 
 export interface Stats {
+  /**
+   * Current HP of the Floran.
+   */
   hp: number;
+  /**
+   * Maximum HP used for percentage based effects.
+   */
+  maxHp: number;
+  /**
+   * Maximum water capacity of the Floran.
+   */
   capacity: number;
+  /**
+   * Current water in the Floran's system.
+   */
   currentWater: number;
+  /**
+   * Surface multiplier (approx. 0.8–1.6).
+   */
   surface: number;
+  /**
+   * Initiative score for turn order.
+   */
   initiative: number;
+  /**
+   * Offensive strength.
+   */
   offense: number;
+  /**
+   * Defensive strength.
+   */
   defense: number;
+  /**
+   * Elemental and environmental resistances (0–0.85).
+   */
   resistances: Resistances;
 }
 
@@ -58,4 +108,52 @@ export interface Floran {
   statuses: StatusEffect[];
 }
 
-// Additional interfaces can be added for Items, Arena, Weather, MatchState etc.
+export interface MatchLogEntry {
+  round: number;
+  phase: MatchPhase;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface MatchViewFloran {
+  id: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+  currentWater: number;
+  capacity: number;
+  surface: number;
+  initiative: number;
+  offense: number;
+  defense: number;
+  resistances: Resistances;
+  overWaterStacks: number;
+  rootRot: boolean;
+  statuses: StatusEffect[];
+}
+
+export interface MatchView {
+  round: number;
+  phase: MatchPhase;
+  weather: WeatherType;
+  florans: [MatchViewFloran, MatchViewFloran];
+  logs: MatchLogEntry[];
+  isFinished: boolean;
+  winnerIndex: 0 | 1 | null;
+  koReason?: KOReason;
+}
+
+export interface Command {
+  type: CommandType;
+  targetIndex?: number;
+}
+
+// WebSocket messages used between client and server for the vertical slice.
+export type ClientMessage =
+  | { type: 'start_match' }
+  | { type: 'command'; payload: { command: Command } };
+
+export type ServerMessage =
+  | { type: 'welcome'; payload: { message: string } }
+  | { type: 'match_state'; payload: MatchView }
+  | { type: 'error'; payload: { message: string } };
