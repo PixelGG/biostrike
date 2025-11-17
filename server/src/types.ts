@@ -325,6 +325,47 @@ export interface MatchResult {
   players: MatchResultPlayerSummary[];
 }
 
+export type ShopItemCategory = 'essential' | 'banncore' | 'cosmetic';
+
+export interface ShopItemDefinition {
+  id: string;
+  itemId: string;
+  displayName: string;
+  priceBC: number;
+  category: ShopItemCategory;
+  available: boolean;
+}
+
+export type MarketListingStatus = 'active' | 'sold' | 'canceled' | 'expired';
+
+export interface MarketListing {
+  id: string;
+  sellerId: string;
+  itemType: 'floran' | 'item';
+  /**
+   * For itemType === 'item', this is the itemId.
+   * For itemType === 'floran', this is the Floran instanceId.
+   */
+  refId: string;
+  priceBC: number;
+  region: Region;
+  createdAt: number;
+  expiresAt: number;
+  status: MarketListingStatus;
+  feeBC: number;
+}
+
+export interface MarketTransaction {
+  id: string;
+  listingId: string;
+  buyerId: string;
+  sellerId: string;
+  priceBC: number;
+  feeBC: number;
+  netBC: number;
+  at: number;
+}
+
 export interface EnvelopeMeta {
   id: string;
   /**
