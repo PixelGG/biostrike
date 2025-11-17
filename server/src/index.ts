@@ -2,7 +2,7 @@ import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Match } from './match';
-import { sampleFlorans } from './data/florans';
+import { createFloranInstance } from './data/florans';
 import { ClientMessage, Command, CommandType, ServerMessage } from './types';
 
 const app = express();
@@ -25,11 +25,6 @@ const contexts = new WeakMap<WebSocket, ConnectionContext>();
 
 function sendMessage(socket: WebSocket, message: ServerMessage): void {
   socket.send(JSON.stringify(message));
-}
-
-function cloneFloranTemplate(index: number) {
-  // Templates are treated as immutable; clone via JSON for now.
-  return JSON.parse(JSON.stringify(sampleFlorans[index]));
 }
 
 wss.on('connection', (socket) => {
@@ -57,8 +52,8 @@ wss.on('connection', (socket) => {
     }
 
     if (msg.type === 'start_match') {
-      const player = cloneFloranTemplate(0);
-      const enemy = cloneFloranTemplate(1);
+      const player = createFloranInstance('sunflower');
+      const enemy = createFloranInstance('cactus');
 
       context.match = new Match(player, enemy);
 

@@ -108,6 +108,24 @@ export interface Floran {
   statuses: StatusEffect[];
 }
 
+export interface FloranBaseStats {
+  hp: number;
+  capacity: number;
+  surface: number;
+  initiative: number;
+  offense: number;
+  defense: number;
+}
+
+export interface FloranSpecies {
+  id: string;
+  name: string;
+  role?: string;
+  biomeType?: string;
+  baseStats: FloranBaseStats;
+  resistances: Resistances;
+}
+
 export interface MatchLogEntry {
   round: number;
   phase: MatchPhase;
