@@ -220,6 +220,14 @@ export interface MatchViewFloran {
 }
 
 export interface MatchView {
+  /**
+   * Optional engine-level identifier for the match.
+   * The transport already carries a matchId; this is useful for debugging and replays.
+   */
+  id?: string;
+  mode?: MatchMode;
+  arenaId?: string;
+  seed?: number;
   round: number;
   phase: MatchPhase;
   weather: WeatherType;

@@ -167,7 +167,7 @@ function onTicketFromMatchmaking(ticket: MatchTicket): void {
   const playerA = createFloranInstance('sunflower');
   const playerB = createFloranInstance('cactus');
 
-  const match = new Match(playerA, playerB);
+  const match = new Match(playerA, playerB, { id: matchId, mode, arenaId: region });
   const record: MatchRecord = {
     id: matchId,
     mode,

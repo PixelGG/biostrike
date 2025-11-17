@@ -4,6 +4,7 @@ import {
   Floran,
   KOReason,
   MatchLogEntry,
+  MatchMode,
   MatchPhase,
   MatchView,
   MatchViewFloran,
@@ -32,24 +33,47 @@ function getItemById(id: string | undefined): Item | undefined {
   return items.find((it) => it.id === id);
 }
 
+export interface MatchOptions {
+  id?: string;
+  mode?: MatchMode;
+  arenaId?: string;
+  seed?: number;
+}
+
 export class Match {
+  private readonly id?: string;
+  private readonly mode?: MatchMode;
+  private readonly arenaId?: string;
+  private readonly seed: number;
+
   private phase: MatchPhase;
   private round: number;
   private florans: [Floran, Floran];
   private logs: MatchLogEntry[];
   private weather: WeatherType;
-  private rng: RNG;
+  private rngWeather: RNG;
+  private rngCombat: RNG;
   private isFinished: boolean;
   private winnerIndex: 0 | 1 | null;
   private koReason: KOReason | undefined;
 
-  constructor(player: Floran, enemy: Floran, seed: number = Date.now()) {
+  constructor(player: Floran, enemy: Floran, options?: MatchOptions) {
+    this.id = options?.id;
+    this.mode = options?.mode;
+    this.arenaId = options?.arenaId;
+    const providedSeed = options?.seed ?? Date.now();
+    this.seed = providedSeed >>> 0;
+
     this.round = 0;
     this.phase = MatchPhase.StartOfRound;
     this.florans = [player, enemy];
     this.logs = [];
     this.weather = WeatherType.HotDry;
-    this.rng = mulberry32(seed);
+
+    // Derive independent RNG streams for environment and combat from the master seed.
+    this.rngWeather = mulberry32(this.seed ^ 0x9e3779b1);
+    this.rngCombat = mulberry32(this.seed ^ 0x85ebca6b);
+
     this.isFinished = false;
     this.winnerIndex = null;
     this.koReason = undefined;
@@ -71,13 +95,18 @@ export class Match {
     this.phase = MatchPhase.CommandPhase;
     this.resolutionPhase(commands);
 
-    this.phase = MatchPhase.EndOfRound;
+    this.phase = MatchPhase.KOPhase;
     this.checkKO();
+
+    if (!this.isFinished) {
+      this.phase = MatchPhase.EndOfRound;
+      this.log('Round end', {});
+    }
   }
 
   private updateWeather(): void {
     // Simple weighted rotation for the vertical slice.
-    const roll = this.rng();
+    const roll = this.rngWeather();
     if (roll < 0.25) {
       this.weather = WeatherType.HotDry;
     } else if (roll < 0.45) {
@@ -157,7 +186,7 @@ export class Match {
     const [minPct, maxPct] =
       this.weather === WeatherType.LightRain ? [0.1, 0.25] : [0.3, 0.6];
 
-    const roll = minPct + (maxPct - minPct) * this.rng();
+    const roll = minPct + (maxPct - minPct) * this.rngWeather();
     let regenGain = capacity * roll;
     regenGain *= 1 - wetResist;
 
@@ -240,9 +269,20 @@ export class Match {
   private resolutionPhase(commands: [Command, Command]): void {
     this.phase = MatchPhase.ResolutionPhase;
 
-    const order = [0, 1].sort(
-      (a, b) => this.florans[b].stats.initiative - this.florans[a].stats.initiative,
-    );
+    const order = [0, 1].sort((a, b) => {
+      const diff = this.florans[b].stats.initiative - this.florans[a].stats.initiative;
+      if (diff !== 0) {
+        return diff;
+      }
+      // Tie-break via combat RNG for determinism.
+      const roll = this.rngCombat();
+      this.log('Initiative-TieBreak', {
+        firstIndex: a,
+        secondIndex: b,
+        roll,
+      });
+      return roll < 0.5 ? -1 : 1;
+    });
 
     for (const actingIndex of order) {
       if (this.isFinished) {
@@ -479,6 +519,10 @@ export class Match {
     })) as [MatchViewFloran, MatchViewFloran];
 
     return {
+      id: this.id,
+      mode: this.mode,
+      arenaId: this.arenaId,
+      seed: this.seed,
       round: this.round,
       phase: this.phase,
       weather: this.weather,
