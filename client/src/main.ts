@@ -59,10 +59,18 @@ interface MatchView {
   koReason?: string;
 }
 
+type MatchMode = 'PVE_BOT' | 'PVP_CASUAL' | 'PVP_RANKED';
+type AIDifficulty = 'easy' | 'normal' | 'hard';
+
 type ServerMessage =
-  | { type: 'welcome'; payload: { message: string } }
-  | { type: 'match_state'; payload: MatchView }
-  | { type: 'error'; payload: { message: string } };
+  | { type: 'auth/ok'; payload: { userId: string } }
+  | { type: 'auth/error'; payload: { code: string; message: string } }
+  | { type: 'match/queued'; payload: { mode: MatchMode } }
+  | { type: 'match/found'; payload: { matchId: string; mode: MatchMode; opponent?: { userId: string } } }
+  | { type: 'match/state'; payload: { matchId: string; state: MatchView } }
+  | { type: 'match/result'; payload: { matchId: string; state: MatchView } }
+  | { type: 'chat/message'; payload: { channel: string; userId: string; message: string; at: string } }
+  | { type: 'error'; payload: { code: string; message: string } };
 
 type ClientCommand = {
   type: 'ATTACK' | 'ITEM';
@@ -71,11 +79,16 @@ type ClientCommand = {
 };
 
 type ClientMessage =
-  | { type: 'start_match'; payload?: { playerSpeciesId?: string; enemySpeciesId?: string } }
-  | { type: 'command'; payload: { command: ClientCommand } };
+  | { type: 'auth/hello'; payload: { token: string } }
+  | { type: 'match/queue'; payload: { mode: MatchMode; speciesId?: string; difficulty?: AIDifficulty } }
+  | { type: 'match/cancelQueue'; payload: { mode: MatchMode } }
+  | { type: 'match/command'; payload: { matchId: string; command: ClientCommand } }
+  | { type: 'chat/send'; payload: { channel: string; message: string } };
 
 let socket: WebSocket | null = null;
 let lastMatchState: MatchView | null = null;
+let currentMatchId: string | null = null;
+let userId: string | null = null;
 
 function qs<T extends Element>(selector: string): T {
   const el = document.querySelector(selector);
@@ -164,9 +177,15 @@ function renderLogs(state: MatchView): void {
 }
 
 function handleServerMessage(message: ServerMessage): void {
-  if (message.type === 'welcome') {
-    setStatus(message.payload.message);
+  if (message.type === 'auth/ok') {
+    userId = message.payload.userId;
+    setStatus(`Angemeldet als ${userId}.`);
     btnStart.disabled = false;
+    return;
+  }
+
+  if (message.type === 'auth/error') {
+    setStatus(`Auth-Fehler: ${message.payload.message}`);
     return;
   }
 
@@ -175,15 +194,44 @@ function handleServerMessage(message: ServerMessage): void {
     return;
   }
 
-  if (message.type === 'match_state') {
-    lastMatchState = message.payload;
-    renderBattle(message.payload);
-    renderLogs(message.payload);
+  if (message.type === 'match/queued') {
+    setStatus(`In Warteschlange (${message.payload.mode}) ...`);
+    return;
+  }
 
-    const canAct = !message.payload.isFinished;
+  if (message.type === 'match/found') {
+    currentMatchId = message.payload.matchId;
+    setStatus(`Match gefunden (${message.payload.mode}).`);
+    return;
+  }
+
+  if (message.type === 'match/state') {
+    currentMatchId = message.payload.matchId;
+    lastMatchState = message.payload.state;
+    renderBattle(message.payload.state);
+    renderLogs(message.payload.state);
+
+    const canAct = !message.payload.state.isFinished;
     btnAttack.disabled = !canAct;
     btnItem.disabled = !canAct || !selectItem.value;
     btnStart.disabled = false;
+    return;
+  }
+
+  if (message.type === 'match/result') {
+    lastMatchState = message.payload.state;
+    renderBattle(message.payload.state);
+    renderLogs(message.payload.state);
+    setStatus('Match beendet.');
+    currentMatchId = null;
+    btnAttack.disabled = true;
+    btnItem.disabled = true;
+    return;
+  }
+
+  if (message.type === 'chat/message') {
+    // Chat wird aktuell nicht visualisiert, könnte später ergänzt werden.
+    return;
   }
 }
 
@@ -197,8 +245,10 @@ function connect(): void {
   socket = new WebSocket('ws://localhost:3000');
 
   socket.addEventListener('open', () => {
-    setStatus('Verbunden. Klicke „Match starten“.');
-    btnStart.disabled = false;
+    const token = `guest_${Math.random().toString(36).slice(2, 8)}`;
+    const msg: ClientMessage = { type: 'auth/hello', payload: { token } };
+    sendClientMessage(msg);
+    setStatus('Verbunden. Authentifiziere...');
   });
 
   socket.addEventListener('message', (event) => {
@@ -215,6 +265,8 @@ function connect(): void {
     btnStart.disabled = true;
     btnAttack.disabled = true;
     btnItem.disabled = true;
+    socket = null;
+    currentMatchId = null;
   });
 
   socket.addEventListener('error', () => {
@@ -238,8 +290,8 @@ btnConnect.addEventListener('click', () => {
 btnStart.addEventListener('click', () => {
   const playerSpeciesId = selectSpecies.value || 'sunflower';
   const msg: ClientMessage = {
-    type: 'start_match',
-    payload: { playerSpeciesId },
+    type: 'match/queue',
+    payload: { mode: 'PVE_BOT', speciesId: playerSpeciesId, difficulty: 'easy' },
   };
   sendClientMessage(msg);
   btnAttack.disabled = false;
@@ -247,9 +299,13 @@ btnStart.addEventListener('click', () => {
 });
 
 btnAttack.addEventListener('click', () => {
+  if (!currentMatchId) {
+    setStatus('Kein aktives Match.');
+    return;
+  }
   const msg: ClientMessage = {
-    type: 'command',
-    payload: { command: { type: 'ATTACK', targetIndex: 1 } },
+    type: 'match/command',
+    payload: { matchId: currentMatchId, command: { type: 'ATTACK', targetIndex: 1 } },
   };
   sendClientMessage(msg);
 });
@@ -260,15 +316,16 @@ btnItem.addEventListener('click', () => {
     setStatus('Bitte zuerst ein Item auswählen.');
     return;
   }
+  if (!currentMatchId) {
+    setStatus('Kein aktives Match.');
+    return;
+  }
 
   const msg: ClientMessage = {
-    type: 'command',
+    type: 'match/command',
     payload: {
-      command: {
-        type: 'ITEM',
-        targetIndex: 0,
-        itemId,
-      },
+      matchId: currentMatchId,
+      command: { type: 'ITEM', targetIndex: 0, itemId },
     },
   };
   sendClientMessage(msg);

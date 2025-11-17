@@ -46,6 +46,7 @@ export enum KOReason {
 }
 
 export type AIDifficulty = 'easy' | 'normal' | 'hard';
+export type MatchMode = 'PVE_BOT' | 'PVP_CASUAL' | 'PVP_RANKED';
 
 export enum SkillArchetype {
   DirectDamage = 'DirectDamage',
@@ -236,19 +237,88 @@ export interface Command {
   itemId?: string;
 }
 
-// WebSocket messages used between client and server for the vertical slice.
+// WebSocket messages used between client and server.
 export type ClientMessage =
   | {
-      type: 'start_match';
-      payload?: {
-        playerSpeciesId?: string;
-        enemySpeciesId?: string;
+      type: 'auth/hello';
+      payload: {
+        token: string;
+      };
+    }
+  | {
+      type: 'match/queue';
+      payload: {
+        mode: MatchMode;
+        speciesId?: string;
         difficulty?: AIDifficulty;
       };
     }
-  | { type: 'command'; payload: { command: Command } };
+  | {
+      type: 'match/cancelQueue';
+      payload: {
+        mode: MatchMode;
+      };
+    }
+  | {
+      type: 'match/command';
+      payload: {
+        matchId: string;
+        command: Command;
+      };
+    }
+  | {
+      type: 'chat/send';
+      payload: {
+        channel: string;
+        message: string;
+      };
+    };
 
 export type ServerMessage =
-  | { type: 'welcome'; payload: { message: string } }
-  | { type: 'match_state'; payload: MatchView }
-  | { type: 'error'; payload: { message: string } };
+  | {
+      type: 'auth/ok';
+      payload: { userId: string };
+    }
+  | {
+      type: 'auth/error';
+      payload: { code: string; message: string };
+    }
+  | {
+      type: 'match/queued';
+      payload: { mode: MatchMode };
+    }
+  | {
+      type: 'match/found';
+      payload: {
+        matchId: string;
+        mode: MatchMode;
+        opponent?: { userId: string };
+      };
+    }
+  | {
+      type: 'match/state';
+      payload: {
+        matchId: string;
+        state: MatchView;
+      };
+    }
+  | {
+      type: 'match/result';
+      payload: {
+        matchId: string;
+        state: MatchView;
+      };
+    }
+  | {
+      type: 'chat/message';
+      payload: {
+        channel: string;
+        userId: string;
+        message: string;
+        at: string;
+      };
+    }
+  | {
+      type: 'error';
+      payload: { code: string; message: string };
+    };
