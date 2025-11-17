@@ -3,7 +3,14 @@ import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Match } from './match';
 import { createFloranInstance } from './data/florans';
-import { ClientMessage, Command, CommandType, ServerMessage } from './types';
+import { chooseBotCommand } from './ai';
+import {
+  AIDifficulty,
+  ClientMessage,
+  Command,
+  CommandType,
+  ServerMessage,
+} from './types';
 
 const app = express();
 
@@ -19,6 +26,7 @@ const wss = new WebSocketServer({ server });
 
 interface ConnectionContext {
   match?: Match;
+  difficulty?: AIDifficulty;
 }
 
 const contexts = new WeakMap<WebSocket, ConnectionContext>();
@@ -54,11 +62,13 @@ wss.on('connection', (socket) => {
     if (msg.type === 'start_match') {
       const playerSpeciesId = msg.payload?.playerSpeciesId ?? 'sunflower';
       const enemySpeciesId = msg.payload?.enemySpeciesId ?? 'cactus';
+      const difficulty: AIDifficulty = msg.payload?.difficulty ?? 'easy';
 
       const player = createFloranInstance(playerSpeciesId);
       const enemy = createFloranInstance(enemySpeciesId);
 
       context.match = new Match(player, enemy);
+      context.difficulty = difficulty;
 
       sendMessage(socket, {
         type: 'match_state',
@@ -83,12 +93,10 @@ wss.on('connection', (socket) => {
         itemId: command.itemId,
       };
 
-      const enemyCommand: Command = {
-        type: CommandType.Attack,
-        targetIndex: 0,
-      };
+      const stateBefore = context.match.getState();
+      const aiCommand = chooseBotCommand(stateBefore, context.difficulty ?? 'easy');
 
-      context.match.nextRound([normalizedCommand, enemyCommand]);
+      context.match.nextRound([normalizedCommand, aiCommand]);
 
       sendMessage(socket, {
         type: 'match_state',

@@ -40,6 +40,7 @@ export const floranSpecies: FloranSpecies[] = [
       wet: 0.5,
       salt: 0.5,
     } as Resistances),
+    skillIds: ['sun_blade'],
   },
   {
     id: 'cactus',
@@ -62,6 +63,7 @@ export const floranSpecies: FloranSpecies[] = [
       wet: 0.35,
       salt: 0.5,
     } as Resistances),
+    skillIds: ['thorn_burst', 'sap_storage'],
   },
   {
     id: 'aloe',

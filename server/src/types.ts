@@ -45,6 +45,25 @@ export enum KOReason {
   RootRot = 'ROOT_ROT',
 }
 
+export type AIDifficulty = 'easy' | 'normal' | 'hard';
+
+export enum SkillArchetype {
+  DirectDamage = 'DirectDamage',
+  DamageOverTime = 'DamageOverTime',
+  Control = 'Control',
+  Support = 'Support',
+  Reflex = 'Reflex',
+}
+
+export enum DamageType {
+  Physical = 'Physical',
+  Heat = 'Heat',
+  Cold = 'Cold',
+  Spore = 'Spore',
+  Water = 'Water',
+  Neutral = 'Neutral',
+}
+
 export interface Resistances {
   heat: number;
   cold: number;
@@ -129,6 +148,40 @@ export interface FloranBaseStats {
   defense: number;
 }
 
+export type SkillTarget =
+  | 'Self'
+  | 'Enemy'
+  | 'Ally'
+  | 'AllyOrSelf';
+
+export interface SkillDefinition {
+  id: string;
+  name: string;
+  description: string;
+  archetype: SkillArchetype;
+  damageType: DamageType;
+  target: SkillTarget;
+  cooldown: number;
+  /**
+   * For direct damage skills: base power multiplier
+   * applied on top of offense + PS bonus.
+   */
+  power?: number;
+  /**
+   * How strongly photosynthesis contributes to this skill.
+   */
+  psCoefficient?: number;
+  /**
+   * For DoT/control skills.
+   */
+  dotPctPerRound?: number;
+  dotDuration?: number;
+  /**
+   * Initiative modification (positive = faster).
+   */
+  initiativeDelta?: number;
+}
+
 export interface FloranSpecies {
   id: string;
   name: string;
@@ -136,6 +189,7 @@ export interface FloranSpecies {
   biomeType?: string;
   baseStats: FloranBaseStats;
   resistances: Resistances;
+  skillIds?: string[];
 }
 
 export interface MatchLogEntry {
@@ -189,6 +243,7 @@ export type ClientMessage =
       payload?: {
         playerSpeciesId?: string;
         enemySpeciesId?: string;
+        difficulty?: AIDifficulty;
       };
     }
   | { type: 'command'; payload: { command: Command } };
