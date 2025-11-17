@@ -4,6 +4,8 @@ import {
   ModerationCaseStatus,
   ModerationReasonCategory,
 } from '../types';
+import { incrementCounter } from '../observability/metrics';
+import { trackEvent } from '../observability/telemetry';
 
 const casesById = new Map<string, ModerationCase>();
 const casesByUserId = new Map<string, ModerationCase[]>();
@@ -54,6 +56,14 @@ export function createModerationCase(input: CreateModerationCaseInput): Moderati
     reasonCategories: input.reasonCategories,
   });
 
+  incrementCounter('chat_moderation_cases_total', 1);
+  trackEvent('ChatModerationCaseCreated', {
+    caseId: id,
+    reportedUserId: input.reportedUserId,
+    reportedMessageIds: input.reportedMessageIds,
+    reasonCategories: input.reasonCategories,
+  });
+
   return moderationCase;
 }
 
@@ -68,4 +78,3 @@ export function getModerationCasesForUser(userId: string): ModerationCase[] {
 export function getModerationCasesForMessage(messageId: string): ModerationCase[] {
   return casesByMessageId.get(messageId) ?? [];
 }
-

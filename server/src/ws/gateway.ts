@@ -41,6 +41,8 @@ import {
 } from '../matchmaking/service';
 import { processMatchResult } from '../rewards/service';
 import { handleMatchResultForQuests } from '../liveops/service';
+import { incrementCounter } from '../observability/metrics';
+import { trackEvent } from '../observability/telemetry';
 
 type ConnectionState = 'AUTHENTICATING' | 'READY' | 'THROTTLED' | 'CLOSING' | 'CLOSED';
 
@@ -274,6 +276,8 @@ function handleAuthHello(
       }
 
       logger.info('WS authenticated', { userId: claims.userId });
+      incrementCounter('ws_connections_authenticated_total', 1);
+      trackEvent('WsAuthenticated', { userId: claims.userId, sessionId: ctx.sessionId });
       sendMessage(socket, ctx, {
         type: 'auth/ok',
         payload: { userId: claims.userId, sessionId: ctx.sessionId! },
@@ -435,6 +439,12 @@ function handleMatchCommand(
 
     processMatchResult(result);
     handleMatchResultForQuests(result);
+    incrementCounter('matches_finished_total', 1, { mode: record.mode });
+    trackEvent('MatchSimulationFinished', {
+      matchId,
+      mode: record.mode,
+      durationSeconds,
+    });
 
     broadcastToMatch(matchId, (state) => ({
       type: 'match/result',

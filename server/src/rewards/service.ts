@@ -13,6 +13,8 @@ import {
   BcChangeResult,
 } from '../wallet/service';
 import { getLiveConfig } from '../liveops/service';
+import { incrementCounter } from '../observability/metrics';
+import { trackEvent } from '../observability/telemetry';
 
 export interface RewardSummary {
   userId: string;
@@ -75,6 +77,17 @@ export function processMatchResult(result: MatchResult): RewardSummary[] {
       xpGained: s.xp.gainedXp,
       level: s.xp.after.playerLevel,
       bcDelta: s.bc.after.biocredits - s.bc.before.biocredits,
+    })),
+  });
+
+  incrementCounter('match_results_total', 1, { mode });
+  trackEvent('MatchEnded', {
+    matchId,
+    mode,
+    durationSeconds,
+    players: players.map((p) => ({
+      userId: p.userId,
+      isWinner: p.isWinner,
     })),
   });
 

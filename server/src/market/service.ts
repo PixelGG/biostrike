@@ -8,6 +8,8 @@ import {
 } from '../types';
 import { economyConfig } from '../economy/config';
 import { applyBcChange, getWallet } from '../wallet/service';
+import { incrementCounter } from '../observability/metrics';
+import { trackEvent } from '../observability/telemetry';
 
 const listings = new Map<string, MarketListing>();
 const transactions: MarketTransaction[] = [];
@@ -71,6 +73,15 @@ export function createListing(
     sellerId,
     priceBC: listing.priceBC,
     feeBC: listing.feeBC,
+  });
+
+  incrementCounter('market_listings_created_total', 1, { region: data.region });
+  trackEvent('MarketListingCreated', {
+    listingId: id,
+    sellerId,
+    priceBC: listing.priceBC,
+    region: data.region,
+    itemType: data.itemType,
   });
 
   return listing;
@@ -169,6 +180,18 @@ export function buyListing(
     feeBC: fee,
   });
 
+  incrementCounter('market_transactions_total', 1, { region: listing.region });
+  trackEvent('MarketListingSold', {
+    transactionId: txId,
+    listingId: listing.id,
+    buyerId,
+    sellerId: listing.sellerId,
+    priceBC: listing.priceBC,
+    feeBC: fee,
+    netBC: net,
+    region: listing.region,
+  });
+
   // Inventory transfer will be implemented later.
 
   return {
@@ -176,4 +199,3 @@ export function buyListing(
     transaction: tx,
   };
 }
-

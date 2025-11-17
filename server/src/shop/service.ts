@@ -2,6 +2,8 @@ import { logger } from '../core/logger';
 import { shopItems } from '../economy/config';
 import { ShopItemDefinition } from '../types';
 import { applyBcChange, BcChangeResult } from '../wallet/service';
+import { incrementCounter } from '../observability/metrics';
+import { trackEvent } from '../observability/telemetry';
 
 export interface ShopPurchaseResult {
   item: ShopItemDefinition;
@@ -33,10 +35,16 @@ export function purchaseShopItem(
     priceBC: item.priceBC,
   });
 
+  incrementCounter('shop_purchases_total', 1, { itemId: shopItemId });
+  trackEvent('ShopPurchase', {
+    userId,
+    shopItemId,
+    priceBC: item.priceBC,
+  });
+
   // Inventory integration will be added later; for now we only handle BC.
   return {
     item,
     bc: bcResult,
   };
 }
-
