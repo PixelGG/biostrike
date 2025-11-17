@@ -3,6 +3,7 @@ import {
   MatchMode,
   PlayerProgressionProfile,
 } from '../types';
+import { getLiveConfig } from '../liveops/service';
 
 const MAX_LEVEL = 30;
 
@@ -57,7 +58,10 @@ export function awardXp(
   const winBonus = ctx.isWinner ? 1.2 : 0.7;
   const durationFactor = Math.min(1.5, Math.max(0.5, ctx.durationSeconds / 300));
 
-  let gainedXp = Math.round(base * winBonus * durationFactor);
+  const liveConfig = getLiveConfig();
+  const liveMultiplier = liveConfig.xpMultiplierByMode[ctx.mode] ?? 1;
+
+  let gainedXp = Math.round(base * winBonus * durationFactor * liveMultiplier);
 
   let levelUps = 0;
 
@@ -94,4 +98,3 @@ export function awardXp(
     levelUps,
   };
 }
-

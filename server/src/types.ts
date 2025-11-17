@@ -366,6 +366,95 @@ export interface MarketTransaction {
   at: number;
 }
 
+// LiveOps / Events / Quests / LiveConfig
+
+export type EventType =
+  | 'XP_BOOST'
+  | 'BC_BOOST'
+  | 'WEATHER_MODIFIER'
+  | 'ECONOMY_EVENT'
+  | 'QUEST_CAMPAIGN'
+  | 'COSMETIC_EVENT';
+
+export interface EventDefinition {
+  id: string;
+  type: EventType;
+  name: string;
+  description: string;
+  iconKey?: string;
+  defaultDurationHours?: number;
+  allowedRegions?: Region[];
+  allowedModes?: MatchMode[];
+  // Simple parameter bag for modifiers, interpreted by LiveOps service.
+  params?: Record<string, unknown>;
+}
+
+export type EventInstanceState = 'draft' | 'scheduled' | 'active' | 'paused' | 'ended' | 'archived';
+
+export interface EventInstance {
+  id: string;
+  definitionId: string;
+  state: EventInstanceState;
+  region: Region;
+  startsAt: number;
+  endsAt: number;
+  // Optional overrides for definition params.
+  runtimeParams?: Record<string, unknown>;
+}
+
+export type QuestCategory = 'tutorial' | 'daily' | 'weekly' | 'event' | 'meta' | 'achievement';
+
+export type QuestObjectiveType =
+  | 'win_matches'
+  | 'rootrot_kos'
+  | 'catch_florans'
+  | 'play_in_biome'
+  | 'matches_on_days';
+
+export interface QuestObjectiveDefinition {
+  type: QuestObjectiveType;
+  targetValue: number;
+  // Optional extra filter data (e.g. biomeId, mode).
+  filter?: Record<string, unknown>;
+}
+
+export interface QuestDefinition {
+  id: string;
+  category: QuestCategory;
+  name: string;
+  description: string;
+  objectives: QuestObjectiveDefinition[];
+  // Simple reward hints; actual reward logic is handled in progression/economy subsystems.
+  reward: {
+    xp?: number;
+    bc?: number;
+  };
+}
+
+export type QuestInstanceState = 'locked' | 'available' | 'inProgress' | 'completed' | 'claimed' | 'expired';
+
+export interface QuestProgress {
+  objectiveIndex: number;
+  currentValue: number;
+}
+
+export interface QuestInstance {
+  id: string;
+  userId: string;
+  questDefinitionId: string;
+  state: QuestInstanceState;
+  progress: QuestProgress[];
+  expiresAt?: number;
+  rewardClaimed: boolean;
+}
+
+export interface LiveConfig {
+  // Multipliers applied in progression/rewards.
+  xpMultiplierByMode: Partial<Record<MatchMode, number>>;
+  bcMultiplierByMode: Partial<Record<MatchMode, number>>;
+  // Future extension: marketFee overrides, weather modifiers, UI flags, etc.
+}
+
 export interface EnvelopeMeta {
   id: string;
   /**

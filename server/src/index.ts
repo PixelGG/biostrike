@@ -5,6 +5,7 @@ import { logger } from './core/logger';
 import { createApiRouter } from './http/api';
 import { connectDatabase } from './db';
 import { attachWebSocketGateway } from './ws/gateway';
+import { startLiveOpsScheduler } from './liveops/service';
 
 const app = express();
 
@@ -22,8 +23,8 @@ attachWebSocketGateway(server);
 
 async function start() {
   await connectDatabase();
-  // Start matchmaking loop after DB connection; runs in-memory for now.
-  // The loop is triggered inside the gateway via startMatchmakingLoop.
+  // Start LiveOps scheduler (events/quests) and matchmaking loop.
+  startLiveOpsScheduler();
 
   server.listen(config.port, () => {
     logger.info(`BioStrike server listening`, { port: config.port, env: config.env });

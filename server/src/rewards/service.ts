@@ -12,6 +12,7 @@ import {
   applyBcChange,
   BcChangeResult,
 } from '../wallet/service';
+import { getLiveConfig } from '../liveops/service';
 
 export interface RewardSummary {
   userId: string;
@@ -30,7 +31,11 @@ function computeBaseBcReward(
       : isWinner ? 40 : 20;
 
   const durationFactor = Math.min(1.5, Math.max(0.5, durationSeconds / 300));
-  const value = Math.round(base * durationFactor);
+
+  const liveConfig = getLiveConfig();
+  const liveMultiplier = liveConfig.bcMultiplierByMode[mode] ?? 1;
+
+  const value = Math.round(base * durationFactor * liveMultiplier);
 
   return value;
 }
@@ -75,4 +80,3 @@ export function processMatchResult(result: MatchResult): RewardSummary[] {
 
   return summaries;
 }
-

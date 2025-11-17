@@ -26,6 +26,7 @@ import {
   startMatchmakingLoop,
 } from '../matchmaking/service';
 import { processMatchResult } from '../rewards/service';
+import { handleMatchResultForQuests } from '../liveops/service';
 
 type ConnectionState = 'AUTHENTICATING' | 'READY' | 'THROTTLED' | 'CLOSING' | 'CLOSED';
 
@@ -391,6 +392,7 @@ function handleMatchCommand(
     };
 
     processMatchResult(result);
+    handleMatchResultForQuests(result);
 
     broadcastToMatch(matchId, (state) => ({
       type: 'match/result',
