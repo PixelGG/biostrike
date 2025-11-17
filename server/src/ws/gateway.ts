@@ -10,13 +10,21 @@ import {
   CommandType,
   EnvelopeMeta,
   MatchMode,
+  MatchTicket,
   MatchView,
+  Region,
   ServerMessage,
   ServerMessagePayload,
 } from '../types';
 import { Match } from '../match';
 import { createFloranInstance } from '../data/florans';
 import { chooseBotCommand } from '../ai';
+import {
+  cancelQueue,
+  enqueuePlayer,
+  setMatchFoundHandler,
+  startMatchmakingLoop,
+} from '../matchmaking/service';
 
 type ConnectionState = 'AUTHENTICATING' | 'READY' | 'THROTTLED' | 'CLOSING' | 'CLOSED';
 
@@ -55,6 +63,10 @@ const sockets = new Set<WebSocket>();
 const contexts = new WeakMap<WebSocket, ConnectionContext>();
 const userSockets = new Map<string, Set<WebSocket>>();
 const matches = new Map<string, MatchRecord>();
+
+// Start the global matchmaking loop once when the gateway module is loaded.
+startMatchmakingLoop();
+
 
 function makeEnvelopeMeta(ctx: ConnectionContext): EnvelopeMeta {
   ctx.outSeq += 1;
@@ -137,6 +149,57 @@ function createMatchId(): string {
   return `m_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }
 
+function defaultRegion(): Region {
+  // TODO: infer from user/session/IP; for now, use EU as default.
+  return 'EU';
+}
+
+function onTicketFromMatchmaking(ticket: MatchTicket): void {
+  const { id: matchId, mode, region, players } = ticket;
+
+  // For now we only support 1v1 PvP tickets.
+  if (players.length !== 2) {
+    logger.warn('Unsupported ticket player count', { matchId, count: players.length });
+    return;
+  }
+
+  const [a, b] = players;
+  const playerA = createFloranInstance('sunflower');
+  const playerB = createFloranInstance('cactus');
+
+  const match = new Match(playerA, playerB);
+  const record: MatchRecord = {
+    id: matchId,
+    mode,
+    match,
+    players: [a.userId, b.userId],
+    difficulty: 'easy',
+    createdAt: Date.now(),
+  };
+
+  matches.set(matchId, record);
+
+  const state = match.getState();
+
+  // Notify both players that the match was found.
+  for (const userId of record.players) {
+    const socketsForUser = userSockets.get(userId);
+    if (!socketsForUser) continue;
+    for (const socket of socketsForUser) {
+      const ctx = contexts.get(socket);
+      if (!ctx) continue;
+      sendMessage(socket, ctx, {
+        type: 'match/found',
+        payload: { matchId, mode, opponent: undefined },
+      });
+      sendMessage(socket, ctx, {
+        type: 'match/state',
+        payload: { matchId, state },
+      });
+    }
+  }
+}
+
 function handleAuthHello(
   socket: WebSocket,
   ctx: ConnectionContext,
@@ -201,55 +264,55 @@ function handleMatchQueue(
   const { mode, speciesId, difficulty } = msg.payload;
   const effectiveMode: MatchMode = mode ?? 'PVE_BOT';
 
-  if (effectiveMode !== 'PVE_BOT') {
+  if (effectiveMode === 'PVE_BOT') {
+    const playerSpeciesId = speciesId ?? 'sunflower';
+    const botSpeciesId = 'cactus';
+    const diff: AIDifficulty = difficulty ?? 'easy';
+
+    const player = createFloranInstance(playerSpeciesId);
+    const enemy = createFloranInstance(botSpeciesId);
+    const match = new Match(player, enemy);
+    const matchId = createMatchId();
+
+    const record: MatchRecord = {
+      id: matchId,
+      mode: 'PVE_BOT',
+      match,
+      players: [ctx.userId],
+      difficulty: diff,
+      createdAt: Date.now(),
+    };
+
+    matches.set(matchId, record);
+    ctx.matchId = matchId;
+    ctx.difficulty = diff;
+
+    const state = match.getState();
+
     sendMessage(socket, ctx, {
-      type: 'error',
+      type: 'match/found',
       payload: {
-        code: 'mode_not_supported',
-        message: 'Only PVE_BOT matchmaking is implemented in this prototype.',
+        matchId,
+        mode: record.mode,
+      },
+    });
+
+    sendMessage(socket, ctx, {
+      type: 'match/state',
+      payload: {
+        matchId,
+        state,
       },
     });
     return;
   }
 
-  const playerSpeciesId = speciesId ?? 'sunflower';
-  const botSpeciesId = 'cactus';
-  const diff: AIDifficulty = difficulty ?? 'easy';
-
-  const player = createFloranInstance(playerSpeciesId);
-  const enemy = createFloranInstance(botSpeciesId);
-  const match = new Match(player, enemy);
-  const matchId = createMatchId();
-
-  const record: MatchRecord = {
-    id: matchId,
-    mode: 'PVE_BOT',
-    match,
-    players: [ctx.userId],
-    difficulty: diff,
-    createdAt: Date.now(),
-  };
-
-  matches.set(matchId, record);
-  ctx.matchId = matchId;
-  ctx.difficulty = diff;
-
-  const state = match.getState();
+  const region: Region = defaultRegion();
+  enqueuePlayer(ctx.userId, effectiveMode, region);
 
   sendMessage(socket, ctx, {
-    type: 'match/found',
-    payload: {
-      matchId,
-      mode: record.mode,
-    },
-  });
-
-  sendMessage(socket, ctx, {
-    type: 'match/state',
-    payload: {
-      matchId,
-      state,
-    },
+    type: 'match/queued',
+    payload: { mode: effectiveMode },
   });
 }
 
@@ -324,6 +387,9 @@ function handleMatchCommand(
 export function attachWebSocketGateway(server: http.Server): void {
   const wss = new WebSocketServer({ server });
 
+  // Register matchmaking callback once.
+  setMatchFoundHandler(onTicketFromMatchmaking);
+
   wss.on('connection', (socket) => {
     sockets.add(socket);
     const context: ConnectionContext = {
@@ -394,7 +460,7 @@ export function attachWebSocketGateway(server: http.Server): void {
           handleMatchQueue(socket, context, msg);
           break;
         case 'match/cancelQueue':
-          // No real queue yet; acknowledge for future compatibility.
+          cancelQueue(context.userId!, msg.payload.mode, defaultRegion());
           sendMessage(socket, context, {
             type: 'match/queued',
             payload: { mode: msg.payload.mode },

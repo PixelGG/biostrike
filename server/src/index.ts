@@ -22,6 +22,8 @@ attachWebSocketGateway(server);
 
 async function start() {
   await connectDatabase();
+  // Start matchmaking loop after DB connection; runs in-memory for now.
+  // The loop is triggered inside the gateway via startMatchmakingLoop.
 
   server.listen(config.port, () => {
     logger.info(`BioStrike server listening`, { port: config.port, env: config.env });

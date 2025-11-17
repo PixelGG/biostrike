@@ -48,6 +48,8 @@ export enum KOReason {
 export type AIDifficulty = 'easy' | 'normal' | 'hard';
 export type MatchMode = 'PVE_BOT' | 'PVP_CASUAL' | 'PVP_RANKED';
 
+export type Region = 'EU' | 'NA' | 'ASIA' | 'SA' | 'OC';
+
 export enum SkillArchetype {
   DirectDamage = 'DirectDamage',
   DamageOverTime = 'DamageOverTime',
@@ -235,6 +237,37 @@ export interface Command {
    * Optional: item identifier when using CommandType.Item.
    */
   itemId?: string;
+}
+
+// Rating and matchmaking domain types.
+
+export interface PlayerRating {
+  mode: MatchMode;
+  ratingValue: number;
+  ratingUncertainty?: number;
+}
+
+export interface QueueEntry {
+  userId: string;
+  mode: MatchMode;
+  region: Region;
+  rating: PlayerRating;
+  enqueueTime: number;
+  // Additional constraints can be added later (preferred biome, party, etc.).
+}
+
+export interface MatchTicketPlayer {
+  userId: string;
+  rating: PlayerRating;
+  side: 'A' | 'B';
+}
+
+export interface MatchTicket {
+  id: string;
+  mode: MatchMode;
+  region: Region;
+  players: MatchTicketPlayer[];
+  createdAt: number;
 }
 
 export interface EnvelopeMeta {
