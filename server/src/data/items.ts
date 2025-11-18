@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { Resistances } from '../types';
 
 export type ItemCategory = 'instant' | 'preStatus' | 'preResolve' | 'utility';
@@ -14,7 +16,13 @@ export type ItemEffectKey =
   | 'cold_nullify_ps_boost'
   | 'leaf_loss_reduce'
   | 'salt_neutralize'
-  | 'reserve_water';
+  | 'reserve_water'
+  | 'cleanse'
+  | 'vision_weather'
+  | 'vision_water'
+  | 'summon_seedling'
+  | 'cap_increase'
+  | 'catch_attempt';
 
 export interface ItemParams {
   [key: string]: number | boolean;
@@ -29,7 +37,7 @@ export interface Item {
   params: ItemParams;
 }
 
-export const items: Item[] = [
+const baseItems: Item[] = [
   {
     id: 'watering_can',
     name: 'Gießkanne',
@@ -120,3 +128,80 @@ export const items: Item[] = [
   },
 ];
 
+interface DesignItem {
+  id: string;
+  name: string;
+  effectKey: string;
+  params: { [key: string]: number | boolean };
+}
+
+function inferCategory(effectKey: string): ItemCategory {
+  switch (effectKey) {
+    case 'water_instant':
+    case 'water_precise':
+    case 'heal_and_water':
+    case 'cap_increase':
+      return 'instant';
+    case 'transp_reduce':
+    case 'rootrot_progress_reduce':
+    case 'phys_boost':
+    case 'ps_boost':
+    case 'no_sunburn':
+    case 'cold_nullify_ps_boost':
+    case 'leaf_loss_reduce':
+    case 'salt_neutralize':
+    case 'cleanse':
+      return 'preStatus';
+    case 'reserve_water':
+    case 'vision_weather':
+    case 'vision_water':
+    case 'summon_seedling':
+    case 'catch_attempt':
+      return 'utility';
+    default:
+      return 'instant';
+  }
+}
+
+function inferRarity(id: string): Item['rarity'] {
+  if (id.startsWith('bannkern_4')) return 'epic';
+  if (id.startsWith('bannkern_3')) return 'rare';
+  if (id.startsWith('bannkern_2')) return 'rare';
+  if (id.startsWith('bannkern_1')) return 'uncommon';
+  return 'common';
+}
+
+function loadAdditionalItemsFromJson(): Item[] {
+  try {
+    const jsonPath = path.resolve(process.cwd(), '../client/items.json');
+    if (!fs.existsSync(jsonPath)) {
+      return [];
+    }
+    const raw = fs.readFileSync(jsonPath, 'utf-8');
+    const data = JSON.parse(raw) as DesignItem[];
+
+    const existingIds = new Set(baseItems.map((i) => i.id));
+    const additional: Item[] = [];
+
+    for (const entry of data) {
+      if (!entry || !entry.id || existingIds.has(entry.id)) continue;
+
+      additional.push({
+        id: entry.id,
+        name: entry.name,
+        rarity: inferRarity(entry.id),
+        category: inferCategory(entry.effectKey),
+        effectKey: entry.effectKey as ItemEffectKey,
+        // For now, use the design parameters directly; engine logic will interpret
+        // subsets of these for future effects.
+        params: entry.params,
+      });
+    }
+
+    return additional;
+  } catch {
+    return [];
+  }
+}
+
+export const items: Item[] = [...baseItems, ...loadAdditionalItemsFromJson()];
